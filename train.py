@@ -1,19 +1,9 @@
-#
-# Copyright (C) 2023, Inria
-# GRAPHDECO research group, https://team.inria.fr/graphdeco
-# All rights reserved.
-#
-# This software is free for non-commercial, research and evaluation use 
-# under the terms of the LICENSE.md file.
-#
-# For inquiries contact  george.drettakis@inria.fr
-#
-
 import os
 import torch
+import math
 from random import randint
 from utils.loss_utils import l1_loss, ssim
-from gaussian_renderer import render, network_gui
+from gaussian_renderer import render
 import sys
 from scene import Scene, GaussianModel
 from utils.general_utils import safe_state
@@ -22,11 +12,33 @@ from tqdm import tqdm
 from utils.image_utils import psnr
 from argparse import ArgumentParser, Namespace
 from arguments import ModelParams, PipelineParams, OptimizationParams
+from gaussian_renderer import network_gui_ws
+import numpy as np
 try:
     from torch.utils.tensorboard import SummaryWriter
     TENSORBOARD_FOUND = True
 except ImportError:
     TENSORBOARD_FOUND = False
+
+def eulerRotation(theata,phi,psi):
+    yaw = np.array([
+        [math.cos(theata), 0 , math.sin(theata)],
+        [0,1,0],
+        [-math.sin(theata), 0 , -math.cos(theata)],
+    ])
+    pitch = np.array([
+        [1,0,0],
+        [0,math.cos(phi),-math.sin(phi)],
+        [0,math.sin(phi),math.cos(phi)],
+    ])
+    roll = np.array([
+        [math.cos(psi),-math.sin(psi),0],
+        [math.sin(psi),math.cos(psi),0],
+        [0,0,1],
+    ])
+    
+    return yaw@pitch@roll.tolist()
+    
 
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from):
     first_iter = 0
@@ -48,21 +60,36 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     ema_loss_for_log = 0.0
     progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
     first_iter += 1
+    web_cam = scene.getTrainCameras()[1]
+    x0,y0,z0 = web_cam.T
+    web_rotation = web_cam.R
+    
+
+    print(web_rotation)
+    
+    theata = 0
+    phi = 0
+    psi = 0
+    
     for iteration in range(first_iter, opt.iterations + 1):        
-        if network_gui.conn == None:
-            network_gui.try_connect()
-        while network_gui.conn != None:
-            try:
-                net_image_bytes = None
-                custom_cam, do_training, pipe.convert_SHs_python, pipe.compute_cov3D_python, keep_alive, scaling_modifer = network_gui.receive()
-                if custom_cam != None:
-                    net_image = render(custom_cam, gaussians, pipe, background, scaling_modifer)["render"]
-                    net_image_bytes = memoryview((torch.clamp(net_image, min=0, max=1.0) * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy())
-                network_gui.send(net_image_bytes, dataset.source_path)
-                if do_training and ((iteration < int(opt.iterations)) or not keep_alive):
-                    break
-            except Exception as e:
-                network_gui.conn = None
+        
+        remote_cam = web_cam
+        extrin = network_gui_ws.data_array
+        print(extrin)
+        x,y,z = extrin[0],extrin[1],extrin[2]
+        theata,phi,psi = extrin[3],extrin[4],extrin[5]
+
+        web_rot = eulerRotation(theata,phi,psi)
+        web_cam.R = web_rot
+        
+        web_xyz = [x+x0,y+y0,z+z0]
+        web_cam.T = web_xyz
+        web_cam.updateRemote()
+        
+        net_image = render(web_cam, gaussians, pipe, background)["render"]
+        network_gui_ws.latest_width = net_image.size(2)
+        network_gui_ws.latest_height = net_image.size(1)
+        network_gui_ws.latest_result = memoryview((torch.clamp(net_image, min=0, max=1.0) * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy())
 
         iter_start.record()
 
@@ -214,7 +241,7 @@ if __name__ == "__main__":
     safe_state(args.quiet)
 
     # Start GUI server, configure and run training
-    network_gui.init(args.ip, args.port)
+    network_gui_ws.init(args.ip, args.port)
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
     training(lp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from)
 
