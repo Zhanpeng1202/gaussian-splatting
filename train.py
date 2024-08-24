@@ -1,4 +1,5 @@
 import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "7"
 import torch
 import math
 from random import randint
@@ -24,7 +25,7 @@ def eulerRotation(theata,phi,psi):
     yaw = np.array([
         [math.cos(theata), 0 , math.sin(theata)],
         [0,1,0],
-        [-math.sin(theata), 0 , -math.cos(theata)],
+        [-math.sin(theata), 0 , math.cos(theata)],
     ])
     pitch = np.array([
         [1,0,0],
@@ -73,23 +74,29 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     
     for iteration in range(first_iter, opt.iterations + 1):        
         
-        remote_cam = web_cam
-        extrin = network_gui_ws.data_array
-        print(extrin)
-        x,y,z = extrin[0],extrin[1],extrin[2]
-        theata,phi,psi = extrin[3],extrin[4],extrin[5]
+        if network_gui_ws.data_array == None:
+            print("Refresh the webpage")
+        else:
+            remote_cam = web_cam
+            extrin = network_gui_ws.data_array
+            print(extrin)
+            x,y,z = extrin[0],extrin[1],extrin[2]
+            theata,phi,psi = extrin[3],extrin[4],extrin[5]
+            scale = extrin[6]
 
-        web_rot = eulerRotation(theata,phi,psi)
-        web_cam.R = web_rot
-        
-        web_xyz = [x+x0,y+y0,z+z0]
-        web_cam.T = web_xyz
-        web_cam.updateRemote()
-        
-        net_image = render(web_cam, gaussians, pipe, background)["render"]
-        network_gui_ws.latest_width = net_image.size(2)
-        network_gui_ws.latest_height = net_image.size(1)
-        network_gui_ws.latest_result = memoryview((torch.clamp(net_image, min=0, max=1.0) * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy())
+            web_rot = eulerRotation(theata,phi,psi)
+            web_cam.R = web_rot
+            
+            web_xyz = [x+x0,y+y0,z+z0]
+            web_cam.T = web_xyz
+            # web_cam.scale = scale
+            web_cam.updateRemote()
+            
+            net_image = render(web_cam, gaussians, pipe, background, scaling_modifier = scale)["render"]
+            network_gui_ws.latest_width = net_image.size(2)
+            network_gui_ws.latest_height = net_image.size(1)
+            network_gui_ws.latest_result = memoryview((torch.clamp(net_image, min=0, max=1.0) * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy())
+
 
         iter_start.record()
 

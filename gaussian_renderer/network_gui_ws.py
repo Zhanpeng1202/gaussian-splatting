@@ -9,13 +9,16 @@ import threading
 import struct
 
 curr_id = -1
+data_array = None
 latest_width = 0
 latest_height = 0
 latest_result = bytes([])
 
 async def echo(websocket, path):
     global curr_id
+    
     global data_array
+    
     global latest_result
     try:
         async for message in websocket:
@@ -51,4 +54,5 @@ def run_asyncio_loop(wish_host, wish_port):
 
 def init(wish_host, wish_port):
     thread = threading.Thread(target=run_asyncio_loop,args=[wish_host, wish_port])
+    data_array=[0,0,0,0,0,0,0,0,0]
     thread.start()
