@@ -1,13 +1,12 @@
 import os
 os.environ["CUDA_VISIBLE_DEVICES"] = "7"
-from PIL import Image
 import torch
 import math
 from random import randint
 from utils.loss_utils import l1_loss, ssim
 from gaussian_renderer import render
 import sys
-from scene import Scene, GaussianModel
+from scene import Scene_Wall_Experiment, GaussianModel
 from utils.general_utils import safe_state
 import uuid
 from tqdm import tqdm
@@ -16,6 +15,7 @@ from argparse import ArgumentParser, Namespace
 from arguments import ModelParams, PipelineParams, OptimizationParams
 from gaussian_renderer import network_gui_ws
 import numpy as np
+from PIL import Image
 try:
     from torch.utils.tensorboard import SummaryWriter
     TENSORBOARD_FOUND = True
@@ -46,8 +46,11 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
-    scene = Scene(dataset, gaussians)
+    scene = Scene_Wall_Experiment(dataset, gaussians)
     gaussians.training_setup(opt)
+    
+    
+    
     if checkpoint:
         (model_params, first_iter) = torch.load(checkpoint)
         gaussians.restore(model_params, opt)
@@ -62,7 +65,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     ema_loss_for_log = 0.0
     progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
     first_iter += 1
-    web_cam = scene.getTrainCameras()[1]
+    web_cam = scene.getTrainCameras()[0]
     x0,y0,z0 = web_cam.T
     web_rotation = web_cam.R
     
@@ -72,6 +75,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     theata = 0
     phi = 0
     psi = 0
+    
+
     
     for iteration in range(first_iter, opt.iterations + 1):        
         
@@ -94,6 +99,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             web_cam.updateRemote()
             
             net_image = render(web_cam, gaussians, pipe, background, scaling_modifier = scale)["render"]
+ 
+            
             network_gui_ws.latest_width = net_image.size(2)
             network_gui_ws.latest_height = net_image.size(1)
             network_gui_ws.latest_result = memoryview((torch.clamp(net_image, min=0, max=1.0) * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy())
@@ -123,7 +130,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         # Loss
         gt_image = viewpoint_cam.original_image.cuda()
-            
+
         Ll1 = l1_loss(image, gt_image)
         loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
         loss.backward()
@@ -189,7 +196,7 @@ def prepare_output_and_logger(args):
         print("Tensorboard not available: not logging progress")
     return tb_writer
 
-def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_iterations, scene : Scene, renderFunc, renderArgs):
+def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_iterations, scene : Scene_Wall_Experiment, renderFunc, renderArgs):
     if tb_writer:
         tb_writer.add_scalar('train_loss_patches/l1_loss', Ll1.item(), iteration)
         tb_writer.add_scalar('train_loss_patches/total_loss', loss.item(), iteration)

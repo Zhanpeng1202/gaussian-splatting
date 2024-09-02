@@ -59,7 +59,11 @@ def getNerfppNorm(cam_info):
         cam_centers.append(C2W[:3, 3:4])
 
     center, diagonal = get_center_and_diag(cam_centers)
-    radius = diagonal * 1.1
+    
+    if len(cam_centers) == 1:
+        radius = 4
+    else:
+        radius = diagonal * 1.1
 
     translate = -center
 
@@ -254,7 +258,69 @@ def readNerfSyntheticInfo(path, white_background, eval, extension=".png"):
                            ply_path=ply_path)
     return scene_info
 
+def createWallInitialization():
+    cam_infos = []
+    
+    cam_name = "Virtual Camera"
+    image_path = '/data/guest_storage/zhanpengluo/gaussian-splatting/scene'
+
+
+    R = np.eye(3)  
+    T = np.zeros(3)
+    
+    image_width = 545 
+    image_height = 980
+    
+    
+    image = Image.open("/data/guest_storage/zhanpengluo/2.png")
+
+    
+    FovY = 0.8753
+    FovX = 1.4028
+
+    cam_infos.append(CameraInfo(uid=0, R=R, T=T, FovY=FovY, FovX=FovX, image=image,
+                    image_path=image_path, image_name=cam_name, width=image_width, height=image_height ))
+    
+    nerf_normalization = getNerfppNorm(cam_infos)
+    
+    x_range = (-0.1,0.1)
+    y_range = (-0.1,0.1)
+    z_range = (-0.1,0.1)  
+    num_points1 = 1000
+    num_points2 = 500
+    
+    x_wall1 = np.random.uniform(x_range[0], 0.02, num_points1)
+    y_wall1 = np.random.uniform(y_range[0], y_range[1], num_points1)
+    z_wall1 = np.full(num_points1, 0.4)
+    
+    x_wall2 = np.random.uniform(-0.02*2,x_range[1]*2, num_points2)
+    y_wall2 = np.random.uniform(y_range[0]*2, y_range[1]*2, num_points2)
+    z_wall2 = np.full(num_points2, 0.8)
+    x_wall,y_wall,z_wall = np.hstack([x_wall1,x_wall2]),np.hstack([y_wall1,y_wall2]),np.hstack([z_wall1,z_wall2])
+    
+    R_wall1, G_wall1, B_wall1 = np.full(num_points1, 250), np.full(num_points1, 0), np.full(num_points1, 0)
+    R_wall2, G_wall2, B_wall2 = np.full(num_points2, 0), np.full(num_points2, 0), np.full(num_points2, 255)
+    R_wall, G_wall, B_wall = np.hstack([R_wall1, R_wall2]),np.hstack([G_wall1, G_wall2]),np.hstack([B_wall1, B_wall2])
+    
+    nx_wall = np.full((num_points1+num_points2), 0.5)
+    
+
+    positions = np.vstack([x_wall , y_wall , z_wall]).T
+    colors = np.vstack([R_wall, G_wall, B_wall]).T / 255.0
+    normals = np.vstack([nx_wall, nx_wall, nx_wall]).T
+    pcd =  BasicPointCloud(points=positions, colors=colors, normals=normals)
+    
+    
+    scene_info = SceneInfo(point_cloud=pcd,
+                           train_cameras=cam_infos,
+                           test_cameras=cam_infos,
+                           nerf_normalization=nerf_normalization,
+                           ply_path=image_path)        
+    return scene_info 
+    
+
 sceneLoadTypeCallbacks = {
     "Colmap": readColmapSceneInfo,
-    "Blender" : readNerfSyntheticInfo
+    "Blender" : readNerfSyntheticInfo,
+    "Wall_Expriment":createWallInitialization
 }

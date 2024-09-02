@@ -1,7 +1,7 @@
 import torch
 
 host = "127.0.0.1"
-port = 6009
+port = 6019
 
 import asyncio
 import websockets
