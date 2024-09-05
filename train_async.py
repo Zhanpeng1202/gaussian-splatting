@@ -1,12 +1,13 @@
 import os
 os.environ["CUDA_VISIBLE_DEVICES"] = "7"
+from PIL import Image
 import torch
 import math
 from random import randint
 from utils.loss_utils import l1_loss, ssim
 from gaussian_renderer import render
 import sys
-from scene import Scene_Wall_Experiment, GaussianModel
+from scene import Scene, GaussianModel
 from utils.general_utils import safe_state
 import uuid
 from tqdm import tqdm
@@ -14,8 +15,9 @@ from utils.image_utils import psnr
 from argparse import ArgumentParser, Namespace
 from arguments import ModelParams, PipelineParams, OptimizationParams
 from gaussian_renderer import network_gui_ws
+import time
 import numpy as np
-from PIL import Image
+import asyncio
 try:
     from torch.utils.tensorboard import SummaryWriter
     TENSORBOARD_FOUND = True
@@ -42,15 +44,12 @@ def eulerRotation(theata,phi,psi):
     return yaw@pitch@roll.tolist()
     
 
-def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from):
+async def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from):
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
-    scene = Scene_Wall_Experiment(dataset, gaussians)
+    scene = Scene(dataset, gaussians)
     gaussians.training_setup(opt)
-    
-    
-    
     if checkpoint:
         (model_params, first_iter) = torch.load(checkpoint)
         gaussians.restore(model_params, opt)
@@ -65,7 +64,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     ema_loss_for_log = 0.0
     progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
     first_iter += 1
-    web_cam = scene.getTrainCameras()[0]
+    web_cam = scene.getTrainCameras()[1]
     x0,y0,z0 = web_cam.T
     web_rotation = web_cam.R
     
@@ -78,13 +77,15 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     
     
     for iteration in range(first_iter, opt.iterations + 1):        
-        
         if network_gui_ws.data_array == None:
             print("Refresh the webpage")
+            await asyncio.sleep(1) 
+            # await network_gui_ws.task_completed.wait()  # Wait for the event to be set
+            # network_gui_ws.task_completed.clear()  # Reset the event for the next iteration
         else:
-            remote_cam = web_cam
+            start_time = time.time()    
             extrin = network_gui_ws.data_array
-            print(extrin)
+            # print(extrin)
             x,y,z = extrin[0],extrin[1],extrin[2]
             theata,phi,psi = extrin[3],extrin[4],extrin[5]
             scale = extrin[6]
@@ -94,16 +95,21 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             
             web_xyz = [x+x0,y+y0,z+z0]
             web_cam.T = web_xyz
+            # web_cam.scale = scale
             web_cam.updateRemote()
             
             net_image = render(web_cam, gaussians, pipe, background, scaling_modifier = scale)["render"]
- 
-            
             network_gui_ws.latest_width = net_image.size(2)
             network_gui_ws.latest_height = net_image.size(1)
             network_gui_ws.latest_result = memoryview((torch.clamp(net_image, min=0, max=1.0) * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy())
+            end_time = time.time()
+            print(f"Time for rendering image {end_time - start_time} seconds")
+            
+            await asyncio.sleep(0.03)
+            # network_gui_ws.task_completed.clear()  # Reset the event for the next iteration
+        
 
-
+        start_time = time.time()
         iter_start.record()
 
         gaussians.update_learning_rate(iteration)
@@ -124,10 +130,11 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         bg = torch.rand((3), device="cuda") if opt.random_background else background
 
         render_pkg = render(viewpoint_cam, gaussians, pipe, bg)
-        image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]        
+        image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
 
-
+        # Loss
         gt_image = viewpoint_cam.original_image.cuda()
+            
         Ll1 = l1_loss(image, gt_image)
         loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
         loss.backward()
@@ -170,6 +177,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             if (iteration in checkpoint_iterations):
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
                 torch.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
+        
+        end_time = time.time()
+        print(f"Time for training {end_time - start_time} seconds")
+        print()
 
 def prepare_output_and_logger(args):    
     if not args.model_path:
@@ -193,7 +204,7 @@ def prepare_output_and_logger(args):
         print("Tensorboard not available: not logging progress")
     return tb_writer
 
-def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_iterations, scene : Scene_Wall_Experiment, renderFunc, renderArgs):
+def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_iterations, scene : Scene, renderFunc, renderArgs):
     if tb_writer:
         tb_writer.add_scalar('train_loss_patches/l1_loss', Ll1.item(), iteration)
         tb_writer.add_scalar('train_loss_patches/total_loss', loss.item(), iteration)
@@ -230,8 +241,28 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
             tb_writer.add_scalar('total_points', scene.gaussians.get_xyz.shape[0], iteration)
         torch.cuda.empty_cache()
 
+
+
+
+async def main(lp, op,pp,args):
+    websocket_task = asyncio.create_task(network_gui_ws.websocket_server("127.0.0.1", 6019))
+    training_task = asyncio.create_task(
+            training(
+             lp.extract(args),
+             op.extract(args),
+             pp.extract(args),
+             args.test_iterations,
+             args.save_iterations,
+             args.checkpoint_iterations,
+             args.start_checkpoint,
+             args.debug_from))
+    await asyncio.gather(websocket_task, training_task)
+    
+    
+
+
+
 if __name__ == "__main__":
-    # Set up command line argument parser
     parser = ArgumentParser(description="Training script parameters")
     lp = ModelParams(parser)
     op = OptimizationParams(parser)
@@ -250,20 +281,10 @@ if __name__ == "__main__":
     
     print("Optimizing " + args.model_path)
 
-    # Initialize system state (RNG)
     safe_state(args.quiet)
-
-    # Start GUI server, configure and run training
-    network_gui_ws.init(args.ip, args.port)
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
-    training(lp.extract(args),
-             op.extract(args),
-             pp.extract(args),
-             args.test_iterations,
-             args.save_iterations,
-             args.checkpoint_iterations,
-             args.start_checkpoint,
-             args.debug_from)
-
+    
+    asyncio.run(main(lp,op,pp,args))
+    
     # All done
     print("\nTraining complete.")

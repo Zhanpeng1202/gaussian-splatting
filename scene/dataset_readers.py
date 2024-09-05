@@ -264,6 +264,98 @@ def createWallInitialization():
     cam_name = "Virtual Camera"
     image_path = '/data/guest_storage/zhanpengluo/gaussian-splatting/scene'
 
+    R = np.eye(3)  
+    T = np.zeros(3)
+    
+    image_width = 545 
+    image_height = 980
+        
+    image = Image.open("/data/guest_storage/zhanpengluo/gaussian-splatting/walls.png")
+
+    FovY = 0.8753
+    FovX = 1.4028
+
+    cam_infos.append(CameraInfo(uid=0, R=R, T=T, FovY=FovY, FovX=FovX, image=image,
+                    image_path=image_path, image_name=cam_name, width=image_width, height=image_height ))
+    
+    nerf_normalization = getNerfppNorm(cam_infos)
+    
+    num_points1 = 10000
+    num_points2 = 5000
+
+    x1 = np.random.uniform(-0.1, 0, num_points1)
+    x2 = np.random.uniform(0,0.2, num_points2)
+    x = np.hstack([x1,x2])
+    
+    y1 = np.random.uniform(-0.1, 0.1, num_points1)
+    y2 = np.random.uniform(-0.2,0.2, num_points2)
+    y = np.hstack([y1,y2])
+    
+    z1 = np.full(num_points1, 0.4)
+    z2 = np.full(num_points2, 0.8)
+    z = np.hstack([z1, z2])
+
+    r1 = np.zeros(num_points1)
+    r2 = np.zeros(num_points2)
+    g1 = np.zeros(num_points1)
+    g2 = np.zeros(num_points2)
+    b1 = np.zeros(num_points1)
+    b2 = np.zeros(num_points2)
+
+    nx_wall = np.full((num_points1+num_points2), 0.5)
+
+    n_stripes = 5
+    stripe_boundaries = np.linspace(-0.1, 0.1, n_stripes+1)
+    for i in range(n_stripes):
+        if i % 2 == 0:
+            mask = (y1 >= stripe_boundaries[i]) & (y1 < stripe_boundaries[i+1])
+            r1[mask] = 255  
+            g1[mask] = 0    
+            b1[mask] = 0    
+        else:
+            mask = (y1 >= stripe_boundaries[i]) & (y1 < stripe_boundaries[i+1])
+            r1[mask] = 0    
+            g1[mask] = 0    
+            b1[mask] = 255  
+            
+    stripe_boundaries = np.linspace(-0.2, 0.2, n_stripes+1)
+    for i in range(n_stripes):
+        if i % 2 == 0:
+            mask = (y2 >= stripe_boundaries[i]) & (y2 < stripe_boundaries[i+1])
+            r2[mask] = 255  
+            g2[mask] = 0    
+            b2[mask] = 0    
+        else:
+            mask = (y2 >= stripe_boundaries[i]) & (y2 < stripe_boundaries[i+1])
+            r2[mask] = 0    
+            g2[mask] = 0    
+            b2[mask] = 255  
+    r = np.hstack([r1, r2])
+    b = np.hstack([b1, b2])
+    g = np.hstack([g1, g2])
+
+    
+    positions = np.vstack([x , y , z]).T
+    colors = np.vstack([r, g, b]).T / 255.0
+    normals = np.vstack([nx_wall, nx_wall, nx_wall]).T
+
+
+    pcd =  BasicPointCloud(points=positions, colors=colors, normals=normals)
+    
+    
+    scene_info = SceneInfo(point_cloud=pcd,
+                           train_cameras=cam_infos,
+                           test_cameras=cam_infos,
+                           nerf_normalization=nerf_normalization,
+                           ply_path=image_path)        
+    return scene_info 
+
+def randomPointInit(num_points = 1000):
+    cam_infos = []
+    
+    cam_name = "Virtual Camera"
+    image_path = '/data/guest_storage/zhanpengluo/gaussian-splatting/scene'
+
 
     R = np.eye(3)  
     T = np.zeros(3)
@@ -272,7 +364,7 @@ def createWallInitialization():
     image_height = 980
     
     
-    image = Image.open("/data/guest_storage/zhanpengluo/2.png")
+    image = Image.open("/data/guest_storage/zhanpengluo/gaussian-splatting/walls.png")
 
     
     FovY = 0.8753
@@ -289,9 +381,9 @@ def createWallInitialization():
     num_points1 = 1000
     num_points2 = 500
     
-    x_wall1 = np.random.uniform(x_range[0], 0.02, num_points1)
+    x_wall1 = np.random.uniform(x_range[0], x_range[1], num_points1)
     y_wall1 = np.random.uniform(y_range[0], y_range[1], num_points1)
-    z_wall1 = np.full(num_points1, 0.4)
+    z_wall1 = np.random.uniform(y_range[0], y_range[1], num_points1)
     
     x_wall2 = np.random.uniform(-0.02*2,x_range[1]*2, num_points2)
     y_wall2 = np.random.uniform(y_range[0]*2, y_range[1]*2, num_points2)
@@ -317,10 +409,11 @@ def createWallInitialization():
                            nerf_normalization=nerf_normalization,
                            ply_path=image_path)        
     return scene_info 
-    
+ 
 
 sceneLoadTypeCallbacks = {
     "Colmap": readColmapSceneInfo,
     "Blender" : readNerfSyntheticInfo,
-    "Wall_Expriment":createWallInitialization
+    "Wall_Expriment":createWallInitialization,
+    "random_initization":randomPointInit
 }

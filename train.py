@@ -15,6 +15,7 @@ from utils.image_utils import psnr
 from argparse import ArgumentParser, Namespace
 from arguments import ModelParams, PipelineParams, OptimizationParams
 from gaussian_renderer import network_gui_ws
+import time
 import numpy as np
 try:
     from torch.utils.tensorboard import SummaryWriter
@@ -67,20 +68,21 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     web_rotation = web_cam.R
     
 
-    print(web_rotation)
+    # print(web_rotation)
     
     theata = 0
     phi = 0
     psi = 0
     
+    
     for iteration in range(first_iter, opt.iterations + 1):        
-        
+
         if network_gui_ws.data_array == None:
             print("Refresh the webpage")
         else:
-            remote_cam = web_cam
+            start_time = time.time()    
             extrin = network_gui_ws.data_array
-            print(extrin)
+            # print(extrin)
             x,y,z = extrin[0],extrin[1],extrin[2]
             theata,phi,psi = extrin[3],extrin[4],extrin[5]
             scale = extrin[6]
@@ -97,8 +99,11 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             network_gui_ws.latest_width = net_image.size(2)
             network_gui_ws.latest_height = net_image.size(1)
             network_gui_ws.latest_result = memoryview((torch.clamp(net_image, min=0, max=1.0) * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy())
+            end_time = time.time()
+            # print(f"Time for rendering image {end_time - start_time} seconds")
+        
 
-
+        start_time = time.time()
         iter_start.record()
 
         gaussians.update_learning_rate(iteration)
@@ -166,6 +171,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             if (iteration in checkpoint_iterations):
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
                 torch.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
+        
+        end_time = time.time()
+        # print(f"Time for training {end_time - start_time} seconds")
+        print()
 
 def prepare_output_and_logger(args):    
     if not args.model_path:
