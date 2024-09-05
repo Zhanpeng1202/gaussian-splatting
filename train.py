@@ -17,6 +17,7 @@ from arguments import ModelParams, PipelineParams, OptimizationParams
 from gaussian_renderer import network_gui_ws
 import time
 import numpy as np
+import copy
 try:
     from torch.utils.tensorboard import SummaryWriter
     TENSORBOARD_FOUND = True
@@ -63,7 +64,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     ema_loss_for_log = 0.0
     progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
     first_iter += 1
-    web_cam = scene.getTrainCameras()[1]
+    web_cam = copy.deepcopy(scene.getTrainCameras()[0])
     x0,y0,z0 = web_cam.T
     web_rotation = web_cam.R
     

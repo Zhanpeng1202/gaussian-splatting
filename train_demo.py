@@ -1,5 +1,6 @@
 import os
 os.environ["CUDA_VISIBLE_DEVICES"] = "7"
+import copy
 import torch
 import math
 from random import randint
@@ -15,12 +16,12 @@ from argparse import ArgumentParser, Namespace
 from arguments import ModelParams, PipelineParams, OptimizationParams
 from gaussian_renderer import network_gui_ws
 import numpy as np
-from PIL import Image
 try:
     from torch.utils.tensorboard import SummaryWriter
     TENSORBOARD_FOUND = True
 except ImportError:
     TENSORBOARD_FOUND = False
+
 
 def eulerRotation(theata,phi,psi):
     yaw = np.array([
@@ -65,11 +66,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     ema_loss_for_log = 0.0
     progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
     first_iter += 1
-    web_cam = scene.getTrainCameras()[0]
+    web_cam = copy.deepcopy(scene.getTrainCameras()[0])
+    
     x0,y0,z0 = web_cam.T
     web_rotation = web_cam.R
-    
-
     print(web_rotation)
     
     theata = 0
@@ -82,7 +82,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         if network_gui_ws.data_array == None:
             print("Refresh the webpage")
         else:
-            remote_cam = web_cam
             extrin = network_gui_ws.data_array
             print(extrin)
             x,y,z = extrin[0],extrin[1],extrin[2]
