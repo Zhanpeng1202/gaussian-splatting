@@ -61,7 +61,7 @@ def getNerfppNorm(cam_info):
     center, diagonal = get_center_and_diag(cam_centers)
     
     if len(cam_centers) == 1:
-        radius = 4
+        radius = 2
     else:
         radius = diagonal * 1.1
 
@@ -262,26 +262,23 @@ def createWallInitialization():
     cam_infos = []
     
     cam_name = "Virtual Camera"
-    image_path = '/data/guest_storage/zhanpengluo/gaussian-splatting/scene'
-
+    image_path = '/data/guest_storage/zhanpengluo/gaussian-splatting/walls.png'
+    image = Image.open(image_path)
     R = np.eye(3)  
     T = np.zeros(3)
     
-    image_width = 545 
-    image_height = 980
-        
-    image = Image.open("/data/guest_storage/zhanpengluo/gaussian-splatting/walls.png")
-
+   
     FovY = 0.8753
     FovX = 1.4028
 
     cam_infos.append(CameraInfo(uid=0, R=R, T=T, FovY=FovY, FovX=FovX, image=image,
-                    image_path=image_path, image_name=cam_name, width=image_width, height=image_height ))
+                    image_path=image_path, image_name=cam_name, width=image.size[0], height=image.size[1] ))
     
     nerf_normalization = getNerfppNorm(cam_infos)
     
-    num_points1 = 10000
-    num_points2 = 5000
+    num_points1 = 1000
+    num_points2 = 500
+
 
     x1 = np.random.uniform(-0.1, 0, num_points1)
     x2 = np.random.uniform(0,0.2, num_points2)
@@ -377,7 +374,6 @@ def randomPointInit(num_points = 1000):
     
     x_range = (-0.1,0.1)
     y_range = (-0.1,0.1)
-    z_range = (-0.1,0.1)  
     num_points1 = 1000
     num_points2 = 500
     

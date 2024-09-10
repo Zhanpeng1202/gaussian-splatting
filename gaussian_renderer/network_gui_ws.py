@@ -28,12 +28,11 @@ async def echo(websocket, path):
             if isinstance(message, bytes):
                 start = time.time()
                 num_integers = len(message) // 4 
-                print(num_integers) 
 
                 received_floats = []
                 int_received = int.from_bytes(message[0:4], byteorder='big', signed=True)
                 end = time.time()
-                print(f"GUI_WS for 1 part = {end-start}second")
+                # print(f"GUI_WS for 1 part = {end-start}second")
                                 
                 start = time.time() 
                 for i in range(1,num_integers):
@@ -41,7 +40,7 @@ async def echo(websocket, path):
                     value = struct.unpack('>f', float_bytes)[0]
                     received_floats.append(value)
                 end = time.time()
-                print(f"GUI_WS for the 2 part= {end-start}second")
+                # print(f"GUI_WS for the 2 part= {end-start}second")
                 
                 start = time.time() 
                 curr_id = int_received 
@@ -49,16 +48,16 @@ async def echo(websocket, path):
                 header = struct.pack('ii', latest_width, latest_height)  # Pack the two integers (height and width)
                 
                 end = time.time()
-                print(f"GUI_WS for the for-loop = {end-start}second")
+                # print(f"GUI_WS for the for-loop = {end-start}second")
                 start = time.time()
                 
                 # Send the entire tensor as one WebSocket message
                 await websocket.send(header + latest_result)
                 
                 end = time.time()
-                print(f"GUI_WS wait for websocket send = {end-start}second")
+                # print(f"GUI_WS wait for websocket send = {end-start}second")
                 start = time.time()
-            else: break
+
         
     except websockets.exceptions.ConnectionClosed as e:
         print(f"Connection closed: {e}")

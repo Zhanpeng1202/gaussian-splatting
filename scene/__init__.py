@@ -93,6 +93,7 @@ class Scene_Wall_Experiment(Scene):
         self.model_path = args.model_path
         self.loaded_iter = None
         self.gaussians = gaussians
+        
 
         if load_iteration:
             if load_iteration == -1:
@@ -140,5 +141,5 @@ class Scene_Wall_Experiment(Scene):
                                                            "iteration_" + str(self.loaded_iter),
                                                            "point_cloud.ply"))
         else:
-            self.gaussians.create_from_pcd(scene_info.point_cloud, self.cameras_extent)
+            self.gaussians.pcd_wall_experiment(scene_info.point_cloud, self.cameras_extent)
 
