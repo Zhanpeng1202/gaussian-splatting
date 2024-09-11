@@ -159,8 +159,12 @@ class GaussianModel:
 
         print("Number of points at initialisation : ", fused_point_cloud.shape[0])
 
-
-        scales = torch.log(0.1)[...,None].repeat(1, 3)
+        # dist2_original = torch.clamp_min(distCUDA2(torch.from_numpy(np.asarray(pcd.points)).float().cuda()), 0.0000001)
+        dist_near = np.full(len(pcd.points)//2,4e-6)
+        dist_far = np.full(len(pcd.points)//2,4e-4)
+        dist2 = np.concatenate((dist_near, dist_far))
+        dist2 = torch.from_numpy(dist2)
+        scales = torch.log(torch.sqrt(dist2).float().cuda())[...,None].repeat(1, 3)
         # TODO: 
 
         rots = torch.zeros((fused_point_cloud.shape[0], 4), device="cuda")

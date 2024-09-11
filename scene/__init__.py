@@ -85,7 +85,7 @@ class Scene:
     
 class Scene_Wall_Experiment(Scene):
     
-    def __init__(self, args : ModelParams, gaussians : GaussianModel, load_iteration=None, shuffle=True, resolution_scales=[1.0]):
+    def __init__(self, args : ModelParams, gaussians : GaussianModel, load_iteration=None, shuffle=True, resolution_scales=[1.0],exp_type="jitter_wall"):
         """b
         :param path: Path to colmap scene main folder.
         """
@@ -106,7 +106,7 @@ class Scene_Wall_Experiment(Scene):
         self.test_cameras = {}
 
 
-        scene_info = sceneLoadTypeCallbacks["Wall_Expriment"]()
+        scene_info = sceneLoadTypeCallbacks[exp_type]()
   
        
 

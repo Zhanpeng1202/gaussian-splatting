@@ -41,13 +41,27 @@ def eulerRotation(theata,phi,psi):
     ])
     
     return yaw@pitch@roll.tolist()
-    
+
+def save_tensor_image(image,name):
+    from torchvision.transforms import ToPILImage
+    from PIL import Image
+
+
+    # Convert the tensor to a PIL image
+    image = image.permute(1, 2, 0) *255
+    image = Image.fromarray(image.cpu().detach().numpy().astype(np.uint8))
+
+    # Save the image
+    image.save(name)
+    raise ValueError("STOP HERE")
 
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from):
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
-    scene = Scene_Wall_Experiment(dataset, gaussians)
+    scene = Scene_Wall_Experiment(dataset, gaussians,exp_type="jitter_wall")
+    # Wall_Expriment jitter_wall
+    
     gaussians.training_setup(opt)
     
     counter = 0
@@ -125,7 +139,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         render_pkg = render(viewpoint_cam, gaussians, pipe, bg)
         image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]        
-
+        # save_tensor_image(image,"wall_0.01.png")
 
         gt_image = viewpoint_cam.original_image.cuda()
         Ll1 = l1_loss(image, gt_image)
@@ -133,82 +147,33 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         loss.backward()
         iter_end.record()
         
-        # counter += 1
-        # if counter % 30 ==0:
-        #     with torch.no_grad():
-        #         # Progress bar
-        #         ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log
-        #         if iteration % 10 == 0:
-        #             progress_bar.set_postfix({"Loss": f"{ema_loss_for_log:.{7}f}"})
-        #             progress_bar.update(10)
-        #         if iteration == opt.iterations:
-        #             progress_bar.close()
+        counter += 1
+        if counter % 10 ==0:
+            with torch.no_grad():
+                # Progress bar
+                ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log
+                if iteration % 10 == 0:
+                    progress_bar.set_postfix({"Loss": f"{ema_loss_for_log:.{7}f}"})
+                    progress_bar.update(10)
+                if iteration == opt.iterations:
+                    progress_bar.close()
 
-        #         # Log and save
-        #         training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, render, (pipe, background))
-        #         if (iteration in saving_iterations):
-        #             print("\n[ITER {}] Saving Gaussians".format(iteration))
-        #             scene.save(iteration)
+                # Log and save
+                training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, render, (pipe, background))
+                if (iteration in saving_iterations):
+                    print("\n[ITER {}] Saving Gaussians".format(iteration))
+                    scene.save(iteration)
+               
+                # Optimizer step
+                if iteration < opt.iterations:
+                    gaussians.optimizer.step()
+                    gaussians.optimizer.zero_grad(set_to_none = True)
 
-        #         # Densification
-        #         if iteration < opt.densify_until_iter:
-        #             # Keep track of max radii in image-space for pruning
-        #             gaussians.max_radii2D[visibility_filter] = torch.max(gaussians.max_radii2D[visibility_filter], radii[visibility_filter])
-        #             gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
+                if (iteration in checkpoint_iterations):
+                    print("\n[ITER {}] Saving Checkpoint".format(iteration))
+                    torch.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
 
-        #             if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
-        #                 size_threshold = 20 if iteration > opt.opacity_reset_interval else None
-        #                 gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold)
-                    
-        #             if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):
-        #                 gaussians.reset_opacity()
-
-        #         # Optimizer step
-        #         if iteration < opt.iterations:
-        #             gaussians.optimizer.step()
-        #             gaussians.optimizer.zero_grad(set_to_none = True)
-
-        #         if (iteration in checkpoint_iterations):
-        #             print("\n[ITER {}] Saving Checkpoint".format(iteration))
-        #             torch.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
-
-        # with torch.no_grad():
-        #     # Progress bar
-        #     ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log
-        #     if iteration % 10 == 0:
-        #         progress_bar.set_postfix({"Loss": f"{ema_loss_for_log:.{7}f}"})
-        #         progress_bar.update(10)
-        #     if iteration == opt.iterations:
-        #         progress_bar.close()
-
-        #     # Log and save
-        #     training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, render, (pipe, background))
-        #     if (iteration in saving_iterations):
-        #         print("\n[ITER {}] Saving Gaussians".format(iteration))
-        #         scene.save(iteration)
-
-        #     # Densification
-        #     if iteration < opt.densify_until_iter:
-        #         # Keep track of max radii in image-space for pruning
-        #         gaussians.max_radii2D[visibility_filter] = torch.max(gaussians.max_radii2D[visibility_filter], radii[visibility_filter])
-        #         gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
-
-        #         if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
-        #             size_threshold = 20 if iteration > opt.opacity_reset_interval else None
-        #             gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold)
-                
-        #         if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):
-        #             gaussians.reset_opacity()
-
-        #     # Optimizer step
-        #     if iteration < opt.iterations:
-        #         gaussians.optimizer.step()
-        #         gaussians.optimizer.zero_grad(set_to_none = True)
-
-        #     if (iteration in checkpoint_iterations):
-        #         print("\n[ITER {}] Saving Checkpoint".format(iteration))
-        #         torch.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
-
+      
 def prepare_output_and_logger(args):    
     if not args.model_path:
         if os.getenv('OAR_JOB_ID'):
