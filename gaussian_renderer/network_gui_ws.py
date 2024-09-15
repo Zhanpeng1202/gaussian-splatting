@@ -22,41 +22,30 @@ async def echo(websocket, path):
     global data_array
     
     global latest_result
+    
+    global webpage_train_speed
     try:
         async for message in websocket:
 
             if isinstance(message, bytes):
-                start = time.time()
-                num_integers = len(message) // 4 
-
+                num_integers = (len(message)) // 4 
                 received_floats = []
                 int_received = int.from_bytes(message[0:4], byteorder='big', signed=True)
-                end = time.time()
-                # print(f"GUI_WS for 1 part = {end-start}second")
-                                
-                start = time.time() 
-                for i in range(1,num_integers):
+                
+                webpage_train_speed = value = struct.unpack('>f', message[4:8])[0]
+
+                for i in range(2,num_integers):
                     float_bytes = message[i * 4:(i + 1) * 4]
                     value = struct.unpack('>f', float_bytes)[0]
                     received_floats.append(value)
-                end = time.time()
-                # print(f"GUI_WS for the 2 part= {end-start}second")
-                
-                start = time.time() 
+
                 curr_id = int_received 
                 data_array = received_floats
-                header = struct.pack('ii', latest_width, latest_height)  # Pack the two integers (height and width)
+                header = struct.pack('ii', latest_width, latest_height) 
                 
-                end = time.time()
-                # print(f"GUI_WS for the for-loop = {end-start}second")
-                start = time.time()
-                
-                # Send the entire tensor as one WebSocket message
                 await websocket.send(header + latest_result)
                 
-                end = time.time()
-                # print(f"GUI_WS wait for websocket send = {end-start}second")
-                start = time.time()
+
 
         
     except websockets.exceptions.ConnectionClosed as e:

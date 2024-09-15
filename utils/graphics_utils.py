@@ -62,9 +62,9 @@ def getProjectionMatrix(znear, zfar, fovX, fovY):
     z_sign = 1.0
 
     P[0, 0] = 2.0 * znear / (right - left)
-    P[1, 1] = 2.0 * znear / (top - bottom)
-    P[0, 2] = (right + left) / (right - left)
-    P[1, 2] = (top + bottom) / (top - bottom)
+    P[1, 1] = 2.0 * znear / (top - bottom)    # znear  / tanHalfFov 
+    P[0, 2] = (right + left) / (right - left) # 0 
+    P[1, 2] = (top + bottom) / (top - bottom) # 0
     P[3, 2] = z_sign
     P[2, 2] = z_sign * zfar / (zfar - znear)
     P[2, 3] = -(zfar * znear) / (zfar - znear)

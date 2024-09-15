@@ -62,10 +62,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     scene = Scene_Wall_Experiment(dataset, gaussians,exp_type="jitter_wall")
     # Wall_Expriment jitter_wall
     
-    gaussians.training_setup(opt)
-    
+    gaussians.wall_training_setup(opt)
     counter = 0
-    
     
     if checkpoint:
         (model_params, first_iter) = torch.load(checkpoint)
@@ -93,10 +91,24 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     
     
     for iteration in range(first_iter, opt.iterations + 1):        
-        
         if network_gui_ws.data_array == None:
+            optimization_frequency = 100
             print("Refresh the webpage")
+            counter = 0
+            iteration = 0
         else:
+            speed = network_gui_ws.webpage_train_speed
+            frequency = 100 - int(speed*100)
+            if frequency == 100:
+                optimization_frequency = 300000
+                print("Training is suspended")
+            elif frequency==0:
+                optimization_frequency= 1
+            else:
+                optimization_frequency = frequency
+                
+            
+            
             extrin = network_gui_ws.data_array
             print(extrin)
             x,y,z = extrin[0],extrin[1],extrin[2]
@@ -105,50 +117,45 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
             web_rot = eulerRotation(theata,phi,psi)
             web_cam.R = web_rot
-            
             web_xyz = [x+x0,y+y0,z+z0]
             web_cam.T = web_xyz
             web_cam.updateRemote()
             
             net_image = render(web_cam, gaussians, pipe, background, scaling_modifier = scale)["render"]
- 
-            
-            network_gui_ws.latest_width = net_image.size(2)
-            network_gui_ws.latest_height = net_image.size(1)
+            network_gui_ws.latest_width, network_gui_ws.latest_height = net_image.size(2),net_image.size(1)
             network_gui_ws.latest_result = memoryview((torch.clamp(net_image, min=0, max=1.0) * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy())
-
-
-        iter_start.record()
-
-        gaussians.update_learning_rate(iteration)
-
-        # Every 1000 its we increase the levels of SH up to a maximum degree
-        if iteration % 1000 == 0:
-            gaussians.oneupSHdegree()
-
-        # Pick a random Camera
-        if not viewpoint_stack:
-            viewpoint_stack = scene.getTrainCameras().copy()
-        viewpoint_cam = viewpoint_stack.pop(randint(0, len(viewpoint_stack)-1))
-
-        # Render
-        if (iteration - 1) == debug_from:
-            pipe.debug = True
-
-        bg = torch.rand((3), device="cuda") if opt.random_background else background
-
-        render_pkg = render(viewpoint_cam, gaussians, pipe, bg)
-        image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]        
-        # save_tensor_image(image,"wall_0.01.png")
-
-        gt_image = viewpoint_cam.original_image.cuda()
-        Ll1 = l1_loss(image, gt_image)
-        loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
-        loss.backward()
-        iter_end.record()
-        
+            
+            
         counter += 1
-        if counter % 10 ==0:
+        if counter % optimization_frequency ==0:
+            iter_start.record()
+            gaussians.update_learning_rate(iteration)
+
+            # Every 1000 its we increase the levels of SH up to a maximum degree
+            if iteration % 1000 == 0:
+                gaussians.oneupSHdegree()
+
+            # Pick a random Camera
+            if not viewpoint_stack:
+                viewpoint_stack = scene.getTrainCameras().copy()
+            viewpoint_cam = viewpoint_stack.pop(randint(0, len(viewpoint_stack)-1))
+
+            # Render
+            if (iteration - 1) == debug_from:
+                pipe.debug = True
+
+            bg = torch.rand((3), device="cuda") if opt.random_background else background
+
+            render_pkg = render(viewpoint_cam, gaussians, pipe, bg)
+            image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]        
+            # save_tensor_image(image,"wall_0.01.png")
+
+            gt_image = viewpoint_cam.original_image.cuda()
+            Ll1 = l1_loss(image, gt_image)
+            loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
+            loss.backward()
+            iter_end.record()
+            
             with torch.no_grad():
                 # Progress bar
                 ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log
@@ -173,7 +180,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                     print("\n[ITER {}] Saving Checkpoint".format(iteration))
                     torch.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
 
-      
 def prepare_output_and_logger(args):    
     if not args.model_path:
         if os.getenv('OAR_JOB_ID'):
