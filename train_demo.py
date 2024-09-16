@@ -65,6 +65,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     gaussians.wall_training_setup(opt)
     counter = 0
     
+    
     if checkpoint:
         (model_params, first_iter) = torch.load(checkpoint)
         gaussians.restore(model_params, opt)
@@ -83,19 +84,25 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     
     x0,y0,z0 = web_cam.T
     web_rotation = web_cam.R
-    print(web_rotation)
+    # print(web_rotation)
     
     theata = 0
     phi = 0
     psi = 0
+    iteration = first_iter
     
-    
-    for iteration in range(first_iter, opt.iterations + 1):        
+    while(True):
+        
+        if iteration >= opt.iterations:
+            break
+        iteration += 1    
         if network_gui_ws.data_array == None:
             optimization_frequency = 100
             print("Refresh the webpage")
             counter = 0
-            iteration = 0
+            iteration = first_iter
+            
+                
         else:
             speed = network_gui_ws.webpage_train_speed
             frequency = 100 - int(speed*100)
@@ -110,7 +117,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             
             
             extrin = network_gui_ws.data_array
-            print(extrin)
+            # print(extrin)
             x,y,z = extrin[0],extrin[1],extrin[2]
             theata,phi,psi = extrin[3],extrin[4],extrin[5]
             scale = extrin[6]
@@ -172,6 +179,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                     scene.save(iteration)
                
                 # Optimizer step
+                # print(iteration)
                 if iteration < opt.iterations:
                     gaussians.optimizer.step()
                     gaussians.optimizer.zero_grad(set_to_none = True)

@@ -433,12 +433,12 @@ def randomPointInit():
     #  
     jitter_bound= 0.005
     jitter_near_x = np.random.uniform(low=-jitter_bound, high=jitter_bound, size=len(x1))
-    jitter_far_x  = np.random.uniform(low=-jitter_bound*2, high=jitter_bound*2, size=len(x2))
+    jitter_far_x  = np.random.uniform(low=-jitter_bound*10, high=jitter_bound*10, size=len(x2))
     x1 = x1+jitter_near_x
     x2 = x2+jitter_far_x
     
     jitter_near_y = np.random.uniform(low=-jitter_bound, high=jitter_bound, size=len(y1))
-    jitter_far_y  = np.random.uniform(low=-jitter_bound*2, high=jitter_bound*2, size=len(y2))
+    jitter_far_y  = np.random.uniform(low=-jitter_bound*10, high=jitter_bound*10, size=len(y2))
     y1 = y1+jitter_near_y
     y2 = y2+jitter_far_y
     
