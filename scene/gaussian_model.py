@@ -149,6 +149,48 @@ class GaussianModel:
         self._opacity = nn.Parameter(opacities.requires_grad_(True))
         self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
 
+
+
+ # --------------- Add for the wall experiment
+    def scale_wall_experiment(self, pcd : BasicPointCloud, spatial_lr_scale : float):
+        self.spatial_lr_scale = spatial_lr_scale
+        fused_point_cloud = torch.tensor(np.asarray(pcd.points)).float().cuda()
+        fused_color = RGB2SH(torch.tensor(np.asarray(pcd.colors)).float().cuda())
+        features = torch.zeros((fused_color.shape[0], 3, (self.max_sh_degree + 1) ** 2)).float().cuda()
+        features[:, :3, 0 ] = fused_color
+        features[:, 3:, 1:] = 0.0
+
+        print("Number of points at initialisation : ", fused_point_cloud.shape[0])
+
+        # dist2_original = torch.clamp_min(distCUDA2(torch.from_numpy(np.asarray(pcd.points)).float().cuda()), 0.0000001)
+        dist_near = np.full(len(pcd.points)//2,1e-6)
+        dist_far = np.full(len(pcd.points)//2,1e-4)
+        
+        # dist_near = np.random.uniform(low=-4e-6, high=4e-4, size=len(pcd.points)//2)
+        # dist_near = np.random.uniform(low=-4e-6, high=jitter_bound, size=len(pcd.points)//2)
+        
+        
+        
+        dist2 = np.concatenate((dist_near, dist_far))
+        dist2 = torch.from_numpy(dist2)
+        scales = torch.log(torch.sqrt(dist2).float().cuda())[...,None].repeat(1, 3)
+        # TODO: 
+
+        rots = torch.zeros((fused_point_cloud.shape[0], 4), device="cuda")
+        rots[:, 0] = 1
+
+        opacities = inverse_sigmoid(1 * torch.ones((fused_point_cloud.shape[0], 1), dtype=torch.float, device="cuda"))
+        # opaque 1 
+
+        self._xyz = nn.Parameter(fused_point_cloud.requires_grad_(True))
+        self._features_dc = nn.Parameter(features[:,:,0:1].transpose(1, 2).contiguous().requires_grad_(True))
+        self._features_rest = nn.Parameter(features[:,:,1:].transpose(1, 2).contiguous().requires_grad_(True))
+        self._scaling = nn.Parameter(scales.requires_grad_(True))
+        self._rotation = nn.Parameter(rots.requires_grad_(True))
+        self._opacity = nn.Parameter(opacities.requires_grad_(True))
+        self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
+
+
     def pcd_wall_experiment(self, pcd : BasicPointCloud, spatial_lr_scale : float):
         self.spatial_lr_scale = spatial_lr_scale
         fused_point_cloud = torch.tensor(np.asarray(pcd.points)).float().cuda()
@@ -204,6 +246,10 @@ class GaussianModel:
                                                     lr_final=training_args.position_lr_final*self.spatial_lr_scale,
                                                     lr_delay_mult=training_args.position_lr_delay_mult,
                                                     max_steps=training_args.position_lr_max_steps)
+        
+
+# ----------------- 
+        
         
     def training_setup(self, training_args):
         self.percent_dense = training_args.percent_dense

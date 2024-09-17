@@ -141,5 +141,6 @@ class Scene_Wall_Experiment(Scene):
                                                            "iteration_" + str(self.loaded_iter),
                                                            "point_cloud.ply"))
         else:
-            self.gaussians.pcd_wall_experiment(scene_info.point_cloud, self.cameras_extent)
+            # self.gaussians.pcd_wall_experiment(scene_info.point_cloud, self.cameras_extent)
+            self.gaussians.scale_wall_experiment(scene_info.point_cloud, self.cameras_extent)
 

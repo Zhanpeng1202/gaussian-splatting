@@ -278,12 +278,12 @@ def createWallInitialization():
     
     nerf_normalization = getNerfppNorm(cam_infos)
     
-    step = 0.01
+    step = 0.005
     x1 = np.arange(-0.1, 0, step)
-    x2 = np.arange(0, 0.2, step*2)
+    x2 = np.arange(0, 1, step*10)
     
     y1 = np.arange(-0.1, 0.1, step)
-    y2 = np.arange(-0.2, 0.2, step*2)
+    y2 = np.arange(-1, 1, step*10)
     
     x1, y1 = np.meshgrid(x1, y1)
     x2, y2 = np.meshgrid(x2, y2)
@@ -297,7 +297,7 @@ def createWallInitialization():
     num_points2 = len(x2)
     
     z1 = np.full(num_points1, 0.4)
-    z2 = np.full(num_points2, 0.8)
+    z2 = np.full(num_points2, 4)
     z = np.hstack([z1, z2])
 
     r1,r2 = np.zeros(num_points1),np.zeros(num_points2)
@@ -320,7 +320,7 @@ def createWallInitialization():
             g1[mask] = 0    
             b1[mask] = 255  
             
-    stripe_boundaries = np.linspace(-0.2, 0.2, n_stripes+1)
+    stripe_boundaries = np.linspace(-1, 1, n_stripes+1)
     for i in range(n_stripes):
         if i % 2 == 0:
             mask = (y2 >= stripe_boundaries[i]) & (y2 < stripe_boundaries[i+1])
@@ -466,4 +466,5 @@ sceneLoadTypeCallbacks = {
     "Blender" : readNerfSyntheticInfo,
     "Wall_Expriment":createWallInitialization,
     "jitter_wall":randomPointInit
+    # "scale_wall":scale
 }

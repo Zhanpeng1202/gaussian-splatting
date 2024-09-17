@@ -519,7 +519,7 @@ def _multi_tensor_adam(params: List[Tensor],
 
 
 
-# ------------------ Use SGD
+# ------------------ Use SGD 
 
 
 class _RequiredParameter(object):
@@ -730,7 +730,7 @@ def _single_tensor_sgd(params: List[Tensor],
             z_tensor = param[:, 2]  
             # [n,3] [n] [n,1] [n,3]  
             z_tensor = z_tensor.unsqueeze(1).repeat(1, 3)
-            z_tensor = z_tensor.mul_(z_tensor)
+            # z_tensor = z_tensor.mul_(z_tensor)
             d_p = d_p_list[i]
             if weight_decay != 0:
                 d_p = d_p.add(param, alpha=weight_decay)
@@ -750,7 +750,7 @@ def _single_tensor_sgd(params: List[Tensor],
                     d_p = buf
 
             alpha = lr if maximize else -lr
-            d_p.mul_(z_tensor)
+            # d_p.mul_(z_tensor)
             param.add_(d_p, alpha=alpha)
     else: 
         for i, param in enumerate(params):

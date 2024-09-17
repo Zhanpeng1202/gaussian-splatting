@@ -59,7 +59,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
-    scene = Scene_Wall_Experiment(dataset, gaussians,exp_type="jitter_wall")
+    scene = Scene_Wall_Experiment(dataset, gaussians,exp_type="Wall_Expriment")
     # Wall_Expriment jitter_wall
     
     gaussians.wall_training_setup(opt)
