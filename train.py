@@ -43,6 +43,40 @@ def eulerRotation(theata,phi,psi):
     
     return yaw@pitch@roll.tolist()
     
+def visualize(optimizer,name, path):
+    import matplotlib.pyplot as plt
+
+    x = list(range(1,len(optimizer.data[name]["value_max"])+1))
+
+    this_category = optimizer.data[name]
+    
+    
+    plt.figure(1).clf()
+    plt.figure(1)
+    plt.plot(x, this_category["value_max"], label="Max Opacity")  
+    plt.plot(x, this_category["value_min"], label="Min Opacity")  
+    plt.plot(x, this_category["value_mean"], label="Mean Opacity") 
+
+    plt.savefig(f"{path}/{name}/value.png")
+
+    plt.figure(2).clf()
+    plt.figure(2)
+    plt.plot(x, this_category["gradient_max"], label="Max Opacity")  
+    plt.plot(x, this_category["gradient_min"], label="Min Opacity")  
+    plt.plot(x, this_category["gradient_mean"], label="Mean Opacity") 
+
+
+    plt.savefig(f"{path}/{name}/gradient.png")
+    
+    plt.figure(3).clf()
+    plt.figure(3)
+    plt.plot(x, this_category["stepsize_max"], label="Max Opacity")  
+    plt.plot(x, this_category["stepsize_min"], label="Min Opacity")  
+    plt.plot(x, this_category["stepsize_mean"], label="Mean Opacity") 
+
+
+    plt.savefig(f"{path}/{name}/step_size.png")
+
 
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from):
     first_iter = 0
@@ -79,7 +113,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     for iteration in range(first_iter, opt.iterations + 1):        
 
         if network_gui_ws.data_array == None:
-            print("Refresh the webpage")
+            # print("Refresh the webpage")
+            pass
         else:
             start_time = time.time()    
             extrin = network_gui_ws.data_array
@@ -108,6 +143,18 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         iter_start.record()
 
         gaussians.update_learning_rate(iteration)
+
+        # Visualize the opacity & gradient every 1000 itrs
+        path = "/data/guest_storage/zhanpengluo/gaussian-splatting/visualization_parameter/adam"
+        if iteration%5000 ==0:
+            visualize(gaussians.optimizer,"xyz",path=path)
+            visualize(gaussians.optimizer,"f_dc",path=path)
+            visualize(gaussians.optimizer,"opacity",path=path)
+            visualize(gaussians.optimizer,"scaling",path=path)
+            visualize(gaussians.optimizer,"rotation",path=path)
+            visualize(gaussians.optimizer,"f_rest",path=path)
+
+
 
         # Every 1000 its we increase the levels of SH up to a maximum degree
         if iteration % 1000 == 0:
@@ -166,16 +213,15 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
             # Optimizer step
             if iteration < opt.iterations:
-                gaussians.optimizer.step()
+                gaussians.optimizer.step(viewpoint_cam.getViewMatrix())
+                # gaussians.optimizer.step()
                 gaussians.optimizer.zero_grad(set_to_none = True)
 
             if (iteration in checkpoint_iterations):
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
                 torch.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
         
-        end_time = time.time()
-        # print(f"Time for training {end_time - start_time} seconds")
-        print()
+
 
 def prepare_output_and_logger(args):    
     if not args.model_path:
@@ -246,8 +292,8 @@ if __name__ == "__main__":
     parser.add_argument('--port', type=int, default=6019)
     parser.add_argument('--debug_from', type=int, default=-1)
     parser.add_argument('--detect_anomaly', action='store_true', default=False)
-    parser.add_argument("--test_iterations", nargs="+", type=int, default=[7_000, 30_000])
-    parser.add_argument("--save_iterations", nargs="+", type=int, default=[7_000, 30_000])
+    parser.add_argument("--test_iterations", nargs="+", type=int, default=[5_000, 10_000, 20_000, 30_000, 40_000, 50_000, 60_000])
+    parser.add_argument("--save_iterations", nargs="+", type=int, default=[7_000,  30_000, 60_000])
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--start_checkpoint", type=str, default = None)

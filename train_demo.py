@@ -7,7 +7,7 @@ from random import randint
 from utils.loss_utils import l1_loss, ssim
 from gaussian_renderer import render
 import sys
-from scene import Scene_Wall_Experiment, GaussianModel
+from scene import Scene_Wall_Experiment, GaussianModel,Scene
 from utils.general_utils import safe_state
 import uuid
 from tqdm import tqdm
@@ -59,7 +59,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
-    scene = Scene_Wall_Experiment(dataset, gaussians,exp_type="Wall_Expriment")
+    # scene = Scene_Wall_Experiment(dataset, gaussians,exp_type="Wall_Expriment")
+    scene = Scene(dataset, gaussians)
     # Wall_Expriment jitter_wall
     
     gaussians.wall_training_setup(opt)

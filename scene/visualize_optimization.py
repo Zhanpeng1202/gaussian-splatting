@@ -25,15 +25,37 @@ class GS_Adam(Optimizer):
         defaults = dict(lr=lr, betas=betas, eps=eps,
                         weight_decay=weight_decay, amsgrad=amsgrad,
                         maximize=maximize, foreach=foreach, capturable=capturable)
-        self.mean_opacity = []
-        self.min_opacity = []
-        self.max_opacity = []
-        
-        self.mean_opacity_gradient = []
-        self.min_opacity_gradient = []
-        self.max_opacity_gradient = []
+
+        self.data = {}
+        self.init_category('xyz')
+        self.init_category('opacity')
+        self.init_category('scaling')
+        self.init_category('rotation')
+        self.init_category('f_dc')
+        self.init_category('f_rest')
         super(GS_Adam, self).__init__(params, defaults)
 
+    def append_data(self,type,name,list):
+        # min mean max
+        self.data[name][f"{type}_min"].append(list[0])
+        self.data[name][f"{type}_mean"].append(list[1])
+        self.data[name][f"{type}_max"].append(list[2])
+    # this is a helper function avoiding repetitive declaration
+    def init_category(self,category_name):
+        
+        self.data[category_name] = {
+            'value_mean': [],
+            'value_min': [],
+            'value_max': [],
+            'gradient_mean': [],
+            'gradient_min': [],
+            'gradient_max': [],
+            'stepsize_mean': [],
+            'stepsize_min': [],
+            'stepsize_max': [],
+        }
+           
+        
     def __setstate__(self, state):
         super().__setstate__(state)
         for group in self.param_groups:
@@ -58,7 +80,6 @@ class GS_Adam(Optimizer):
         z = transformed_points[:,2] / (transformed_points[:,3]+ 1e-8)
         
         return z
-        
 
     
     def call_adam_for_group(self, group,view_matrix=None,type="Simple",):
@@ -99,7 +120,7 @@ class GS_Adam(Optimizer):
 
                     state_steps.append(state['step'])
 
-            adam(params_with_grad,
+            step_list = adam(params_with_grad,
                     grads,
                     exp_avgs,
                     exp_avg_sqs,
@@ -115,70 +136,6 @@ class GS_Adam(Optimizer):
                     foreach=group['foreach'],
                     capturable=group['capturable'])
 
-        if type == "op":
-            params_with_grad = []
-            grads = []
-            exp_avgs = []
-            exp_avg_sqs = []
-            max_exp_avg_sqs = []
-            state_steps = []
-            beta1, beta2 = group['betas']
-        
-            for p in group['params']:
-                if p.grad is not None:
-                    params_with_grad.append(p)
-                    if p.grad.is_sparse:
-                        raise RuntimeError('Adam does not support sparse gradients, please consider SparseAdam instead')
-                    grads.append(p.grad)
-
-                    state = self.state[p]
-                    # Lazy state initialization
-                    if len(state) == 0:
-                        state['step'] = torch.zeros((1,), dtype=torch.float, device=p.device) \
-                            if self.defaults['capturable'] else torch.tensor(0.)
-                        # Exponential moving average of gradient values
-                        state['exp_avg'] = torch.zeros_like(p, memory_format=torch.preserve_format)
-                        # Exponential moving average of squared gradient values
-                        state['exp_avg_sq'] = torch.zeros_like(p, memory_format=torch.preserve_format)
-                        if group['amsgrad']:
-                            # Maintains max of all exp. moving avg. of sq. grad. values
-                            state['max_exp_avg_sq'] = torch.zeros_like(p, memory_format=torch.preserve_format)
-
-                    exp_avgs.append(state['exp_avg'])
-                    exp_avg_sqs.append(state['exp_avg_sq'])
-
-                    if group['amsgrad']:
-                        max_exp_avg_sqs.append(state['max_exp_avg_sq'])
-
-                    state_steps.append(state['step'])
-            
-            if len(params_with_grad) ==0:
-                pass
-            else:
-                self.mean_opacity.append(params_with_grad[0].mean().cpu())
-                self.min_opacity.append(params_with_grad[0].min().cpu())
-                self.max_opacity.append(params_with_grad[0].max().cpu())
-                
-                self.max_opacity_gradient.append(grads[0].max().cpu())
-                self.min_opacity_gradient.append(grads[0].min().cpu())
-                self.mean_opacity_gradient.append(grads[0].mean().cpu())
-
-            adam(params_with_grad,
-                    grads,
-                    exp_avgs,
-                    exp_avg_sqs,
-                    max_exp_avg_sqs,
-                    state_steps,
-                    amsgrad=group['amsgrad'],
-                    beta1=beta1,
-                    beta2=beta2,
-                    lr=group['lr'],
-                    weight_decay=group['weight_decay'],
-                    eps=group['eps'],
-                    maximize=group['maximize'],
-                    foreach=group['foreach'],
-                    capturable=group['capturable'])
-        
         if type == "xyz":
             params_with_grad = []
             grads = []
@@ -222,7 +179,7 @@ class GS_Adam(Optimizer):
 
                     state_steps.append(state['step'])
 
-            adam(params_with_grad,
+            step_list = adam(params_with_grad,
                     grads,
                     exp_avgs,
                     exp_avg_sqs,
@@ -239,6 +196,22 @@ class GS_Adam(Optimizer):
                     capturable=group['capturable'],
                     type=1,
                     z = z_in_viewspace)
+        
+        
+        if len(params_with_grad) ==0:
+            pass
+        else:
+            value_list = [torch.abs(params_with_grad[0]).min().cpu(),
+                          torch.abs(params_with_grad[0]).mean().cpu(),
+                          torch.abs(params_with_grad[0]).max().cpu()]
+            gradient_list = [torch.abs(grads[0]).min().cpu(),
+                             torch.abs(grads[0]).mean().cpu(),
+                             torch.abs(grads[0]).max().cpu()]
+            self.append_data("value",group['name'],value_list)
+            self.append_data("gradient",group['name'],gradient_list)
+            self.append_data("stepsize",group['name'],step_list)
+        
+        
         
     @torch.no_grad()
     def step(self, View_Matrix ,  closure=None):
@@ -258,8 +231,6 @@ class GS_Adam(Optimizer):
         for group in self.param_groups:
             if group['name'] == "xyz":
                 self.call_adam_for_group(group,view_matrix=View_Matrix,type="xyz")
-            if group['name'] == "opacity":
-                self.call_adam_for_group(group,view_matrix=View_Matrix,type="op")
             else:
                 self.call_adam_for_group(group)
             
@@ -301,7 +272,7 @@ def adam(params: List[Tensor],
         raise RuntimeError('torch.jit.script not supported with foreach optimizers')
 
     if type == 0:
-        _single_tensor_adam(params,
+        list = _single_tensor_adam(params,
          grads,
          exp_avgs,
          exp_avg_sqs,
@@ -318,7 +289,7 @@ def adam(params: List[Tensor],
         # normal situaztion
     
     if type == 1:
-        _xyz_adam(params,
+        list = _xyz_adam(params,
          grads,
          exp_avgs,
          exp_avg_sqs,
@@ -335,6 +306,7 @@ def adam(params: List[Tensor],
          capturable=capturable)
         
 
+    return list
 
 
 def _xyz_adam(params: List[Tensor],
@@ -369,7 +341,6 @@ def _xyz_adam(params: List[Tensor],
         # z_tensor = z_tensor.mul_(z_tensor)
         # it is z square in the shape of [n 3]
 
-
         if capturable:
             assert param.is_cuda and step_t.is_cuda, "If capturable=True, params and state_steps must be CUDA tensors."
 
@@ -386,7 +357,6 @@ def _xyz_adam(params: List[Tensor],
         # "Respect maginitude for tensor here"
 
         
-
         if capturable:
             step = step_t
 
@@ -437,9 +407,18 @@ def _xyz_adam(params: List[Tensor],
             else:
                 denom = (exp_avg_sq.sqrt() / bias_correction2_sqrt).add_(eps)
 
+            original_param = torch.zeros_like(param)
+            original_param.copy_(param)
+            
             exp_avg.mul_(z_tensor)
             param.addcdiv_(exp_avg, denom, value=-step_size)
             exp_avg.div_(z_tensor)
+            
+    if len(params) == 0:
+        return[10000,10000,10000]
+    step_ = original_param - param
+    return (step_.min().cpu(),step_.mean().cpu(),step_.max().cpu())
+                        
 
 
 def _single_tensor_adam(params: List[Tensor],
@@ -522,7 +501,16 @@ def _single_tensor_adam(params: List[Tensor],
             else:
                 denom = (exp_avg_sq.sqrt() / bias_correction2_sqrt).add_(eps)
 
+            original_param = torch.zeros_like(param)
+            original_param.copy_(param)
+            
             param.addcdiv_(exp_avg, denom, value=-step_size)
+            
+    if len(params) == 0:
+        return[10000,10000,10000]
+    step_ = original_param - param
+    step_.abs_()
+    return (step_.min().cpu(),step_.mean().cpu(),step_.max().cpu())
 
 
 def _multi_tensor_adam(params: List[Tensor],
@@ -626,15 +614,9 @@ def _multi_tensor_adam(params: List[Tensor],
         torch._foreach_addcdiv_(params, exp_avgs, denom, step_size)
 
 
-
-# ------------------ Use SGD 
-
-
 class _RequiredParameter(object):
-    """Singleton class representing a required parameter for an Optimizer."""
     def __repr__(self):
         return "<required parameter>"
-
 required = _RequiredParameter()
 
 
@@ -655,16 +637,32 @@ class GS_SGD(Optimizer):
         if nesterov and (momentum <= 0 or dampening != 0):
             raise ValueError("Nesterov momentum requires a momentum and zero dampening")
         
-        self.mean_opacity = []
-        self.min_opacity = []
-        self.max_opacity = []
-        
-        self.mean_opacity_gradient = []
-        self.min_opacity_gradient = []
-        self.max_opacity_gradient = []
+        self.data = {}
+        self.init_category('xyz')
+        self.init_category('opacity')
+        self.init_category('scaling')
+        self.init_category('rotation')
+        self.init_category('f_dc')
+        self.init_category('f_rest')
         
         super(GS_SGD, self).__init__(params, defaults)
 
+    # this is a helper function avoiding repetitive declaration
+    def init_category(self,category_name):
+        
+        self.data[category_name] = {
+            'value_mean': [],
+            'value_min': [],
+            'value_max': [],
+            'gradient_mean': [],
+            'gradient_min': [],
+            'gradient_max': [],
+            'stepsize_mean': [],
+            'stepsize_min': [],
+            'stepsize_max': [],
+        }
+    
+    
     def __setstate__(self, state):
         super().__setstate__(state)
         for group in self.param_groups:
@@ -685,6 +683,13 @@ class GS_SGD(Optimizer):
         
         return z
 
+    
+    def append_data(self,type,name,list):
+        # min mean max
+        self.data[name][f"{type}_min"].append(list[0])
+        self.data[name][f"{type}_mean"].append(list[1])
+        self.data[name][f"{type}_max"].append(list[2])
+    
     @torch.no_grad()
     def step(self, view_matrix, closure=None):
         """Performs a single optimization step.
@@ -714,6 +719,7 @@ class GS_SGD(Optimizer):
 
                     state = self.state[p]
                     # TODO: 
+                    state = self.state[p]
 
                     # Add dumb state for ['exp_avg'] to prevent exception in 
                     # the densitification and prune stage 
@@ -729,7 +735,7 @@ class GS_SGD(Optimizer):
             if group['name'] == "xyz":
                 xyz = group['params'][0]
                 z = self.get_z_after_transformation(xyz,view_matrix=view_matrix)
-                sgd_xyz(params_with_grad,
+                list = sgd_xyz(params_with_grad,
                 d_p_list,
                 momentum_buffer_list,
                 z,
@@ -743,35 +749,11 @@ class GS_SGD(Optimizer):
                 foreach=group['foreach'])
             if group['name'] == "opacity":
                 
-                # if len(params_with_grad) ==0:
-                #     pass
-                # else:
-                #     is_negative = (params_with_grad[0] < 0).any()
-                #     is_positive = (params_with_grad[0] > 0).any()
-                #     print()
-                #     print(f"{is_negative}")
-                #     print(f"{is_positive}")
-                #     print(f"the max of opacity is{params_with_grad[0].max()}")
-                #     print(f"the mean of opacity is{params_with_grad[0].mean()}")
-                #     print(f"the min of opacity is{params_with_grad[0].min()}")
-                
+
                 # ------------ Track the min mean max for opacity & its gradient 
                 # 
-                
-                if len(params_with_grad) ==0:
-                    pass
-                else:
-                    self.mean_opacity.append(params_with_grad[0].mean().cpu())
-                    self.min_opacity.append(params_with_grad[0].min().cpu())
-                    self.max_opacity.append(params_with_grad[0].max().cpu())
-                    
-                    self.max_opacity_gradient.append(d_p_list[0].max().cpu())
-                    self.min_opacity_gradient.append(d_p_list[0].min().cpu())
-                    self.mean_opacity_gradient.append(d_p_list[0].mean().cpu())
-
-                
-                
-                sgd(params_with_grad,
+                                
+                list = sgd(params_with_grad,
                 d_p_list,
                 momentum_buffer_list,
                 weight_decay=group['weight_decay'],
@@ -782,8 +764,9 @@ class GS_SGD(Optimizer):
                 maximize=group['maximize'],
                 has_sparse_grad=has_sparse_grad,
                 foreach=group['foreach'])
+
             else:
-                sgd(params_with_grad,
+                list = sgd(params_with_grad,
                 d_p_list,
                 momentum_buffer_list,
                 weight_decay=group['weight_decay'],
@@ -795,6 +778,15 @@ class GS_SGD(Optimizer):
                 has_sparse_grad=has_sparse_grad,
                 foreach=group['foreach'])
 
+            if len(params_with_grad) ==0:
+                pass
+            else:
+                value_list = [params_with_grad[0].min().cpu(),params_with_grad[0].mean().cpu(),params_with_grad[0].max().cpu()]
+                gradient_list = [d_p_list[0].min().cpu(),d_p_list[0].mean().cpu(),d_p_list[0].max().cpu()]
+                step_list = list 
+                self.append_data("value",group['name'],value_list)
+                self.append_data("gradient",group['name'],gradient_list)
+                self.append_data("stepsize",group['name'],step_list)
 
             # update momentum_buffers in state
             for p, momentum_buffer in zip(params_with_grad, momentum_buffer_list):
@@ -835,7 +827,7 @@ def sgd(params: List[Tensor],
     else:
         func = _single_tensor_sgd
 
-    func(params,
+    list = func(params,
          d_p_list,
          momentum_buffer_list,
          weight_decay=weight_decay,
@@ -845,6 +837,7 @@ def sgd(params: List[Tensor],
          nesterov=nesterov,
          has_sparse_grad=has_sparse_grad,
          maximize=maximize)
+    return list
 
 def sgd_xyz(params: List[Tensor],
         d_p_list: List[Tensor],
@@ -878,7 +871,7 @@ def sgd_xyz(params: List[Tensor],
     else:
         func = _single_tensor_sgd
 
-    func(params,
+    list = func(params,
          d_p_list,
          momentum_buffer_list,
          z = z,
@@ -891,6 +884,7 @@ def sgd_xyz(params: List[Tensor],
          maximize=maximize,
          type_sgd = 1,
          )
+    return list 
 
 def _single_tensor_sgd(params: List[Tensor],
                        d_p_list: List[Tensor],
@@ -926,12 +920,18 @@ def _single_tensor_sgd(params: List[Tensor],
                     d_p = d_p.add(buf, alpha=momentum)
                 else:
                     d_p = buf
-
+                    
+                    
+            original_param = torch.zeros_like(param)
+            original_param.copy_(param)
+            
+            
             alpha = lr if maximize else -lr
             z_tensor = z.unsqueeze(1).repeat(1, 3).cuda()
             z_tensor.mul_(z_tensor)
             d_p.mul_(z_tensor)
             param.add_(d_p, alpha=alpha)
+            
     else: 
         for i, param in enumerate(params):
 
@@ -954,8 +954,15 @@ def _single_tensor_sgd(params: List[Tensor],
                     d_p = buf
 
             alpha = lr if maximize else -lr
+
+            original_param = torch.zeros_like(param)
+            original_param.copy_(param)
             param.add_(d_p, alpha=alpha)
-            
+    if len(params) == 0:
+        return[10000,10000,10000]
+    step_ = original_param - param
+    return (step_.min().cpu(),step_.mean().cpu(),step_.max().cpu())
+       
 def _multi_tensor_sgd(params: List[Tensor],
                       grads: List[Tensor],
                       momentum_buffer_list: List[Optional[Tensor]],

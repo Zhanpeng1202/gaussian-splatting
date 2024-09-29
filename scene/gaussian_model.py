@@ -20,7 +20,8 @@ from utils.sh_utils import RGB2SH
 from simple_knn._C import distCUDA2
 from utils.graphics_utils import BasicPointCloud
 from utils.general_utils import strip_symmetric, build_scaling_rotation
-from .adapt_3dgs_opt import GS_Adam,GS_SGD
+# from .adapt_3dgs_opt import GS_Adam,GS_SGD
+from .visualize_optimization import GS_Adam, GS_SGD
 
 class GaussianModel:
 
@@ -113,6 +114,14 @@ class GaussianModel:
     
     @property
     def get_opacity(self):
+        # min = self._opacity.min()
+        # max = self._opacity.max()
+        # opacity = torch.zeros_like(self._opacity)
+        # opacity.copy_(self._opacity)
+
+        # return (opacity - min)/ (max-min+1e-6) 
+        
+        
         return self.opacity_activation(self._opacity)
     
     def get_covariance(self, scaling_modifier = 1):
@@ -139,7 +148,9 @@ class GaussianModel:
         rots[:, 0] = 1
 
         opacities = inverse_sigmoid(0.1 * torch.ones((fused_point_cloud.shape[0], 1), dtype=torch.float, device="cuda"))
-        # opaque 1 
+        # opacities = torch.rand(size=(fused_point_cloud.shape[0], 1), dtype=torch.float, device="cuda")
+        # opacities = inverse_sigmoid(0.2 * torch.rand(size=(fused_point_cloud.shape[0], 1), dtype=torch.float, device="cuda"))
+
 
         self._xyz = nn.Parameter(fused_point_cloud.requires_grad_(True))
         self._features_dc = nn.Parameter(features[:,:,0:1].transpose(1, 2).contiguous().requires_grad_(True))
@@ -163,8 +174,8 @@ class GaussianModel:
         print("Number of points at initialisation : ", fused_point_cloud.shape[0])
 
         # dist2_original = torch.clamp_min(distCUDA2(torch.from_numpy(np.asarray(pcd.points)).float().cuda()), 0.0000001)
-        dist_near = np.full(len(pcd.points)//2,1e-6)
-        dist_far = np.full(len(pcd.points)//2,1e-4)
+        dist_near = np.full(len(pcd.points)//2,64e-6)
+        dist_far = np.full(len(pcd.points)//2,64e-4)
         
         # dist_near = np.random.uniform(low=-4e-6, high=4e-4, size=len(pcd.points)//2)
         # dist_near = np.random.uniform(low=-4e-6, high=jitter_bound, size=len(pcd.points)//2)
@@ -265,7 +276,9 @@ class GaussianModel:
             {'params': [self._rotation], 'lr': training_args.rotation_lr, "name": "rotation"}
         ]
 
-        self.optimizer = torch.optim.Adam(l, lr=0.0, eps=1e-15)
+        # self.optimizer = torch.optim.Adam(l, lr=0.0, eps=1e-15)
+        self.optimizer = GS_Adam(l,lr=0.1)
+        # self.optimizer = GS_SGD(l,lr=0.0)
         self.xyz_scheduler_args = get_expon_lr_func(lr_init=training_args.position_lr_init*self.spatial_lr_scale,
                                                     lr_final=training_args.position_lr_final*self.spatial_lr_scale,
                                                     lr_delay_mult=training_args.position_lr_delay_mult,
