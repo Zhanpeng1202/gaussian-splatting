@@ -308,7 +308,6 @@ def adam(params: List[Tensor],
 
     return list
 
-
 def _xyz_adam(params: List[Tensor],
                         grads: List[Tensor],
                         exp_avgs: List[Tensor],
@@ -420,7 +419,6 @@ def _xyz_adam(params: List[Tensor],
     return (step_.min().cpu(),step_.mean().cpu(),step_.max().cpu())
                         
 
-
 def _single_tensor_adam(params: List[Tensor],
                         grads: List[Tensor],
                         exp_avgs: List[Tensor],
@@ -508,9 +506,9 @@ def _single_tensor_adam(params: List[Tensor],
             
     if len(params) == 0:
         return[10000,10000,10000]
-    step_ = original_param - param
-    step_.abs_()
-    return (step_.min().cpu(),step_.mean().cpu(),step_.max().cpu())
+    # step_ = original_param - param
+    # step_.abs_()
+    return [1,1,1]
 
 
 def _multi_tensor_adam(params: List[Tensor],
@@ -677,10 +675,11 @@ class GS_SGD(Optimizer):
         ones = torch.ones((points.shape[0], 1)).cuda()
         homogeneous_points = torch.cat((points, ones), dim=1)
         
-        # View Matrix has been tranposed
+
         transformed_points = homogeneous_points @ view_matrix
         z = transformed_points[:,2] / (transformed_points[:,3]+ 1e-8)
-        
+
+
         return z
 
     
@@ -723,14 +722,15 @@ class GS_SGD(Optimizer):
 
                     # Add dumb state for ['exp_avg'] to prevent exception in 
                     # the densitification and prune stage 
-                    state['exp_avg'] = torch.zeros_like(p, memory_format=torch.preserve_format)
+                    # state['exp_avg'] = torch.zeros_like(p, memory_format=torch.preserve_format)
                     state['exp_avg_sq'] = torch.zeros_like(p, memory_format=torch.preserve_format)
+                    if group['momentum']==0:
+                        state['exp_avg'] = torch.zeros_like(p, memory_format=torch.preserve_format)
 
-
-                    if 'momentum_buffer' not in state:
+                    if 'exp_avg' not in state:
                         momentum_buffer_list.append(None)
                     else:
-                        momentum_buffer_list.append(state['momentum_buffer'])
+                        momentum_buffer_list.append(state['exp_avg'])
 
             if group['name'] == "xyz":
                 xyz = group['params'][0]
@@ -747,23 +747,6 @@ class GS_SGD(Optimizer):
                 maximize=group['maximize'],
                 has_sparse_grad=has_sparse_grad,
                 foreach=group['foreach'])
-            if group['name'] == "opacity":
-                
-
-                # ------------ Track the min mean max for opacity & its gradient 
-                # 
-                                
-                list = sgd(params_with_grad,
-                d_p_list,
-                momentum_buffer_list,
-                weight_decay=group['weight_decay'],
-                momentum=group['momentum'],
-                lr=group['lr'],
-                dampening=group['dampening'],
-                nesterov=group['nesterov'],
-                maximize=group['maximize'],
-                has_sparse_grad=has_sparse_grad,
-                foreach=group['foreach'])
 
             else:
                 list = sgd(params_with_grad,
@@ -776,7 +759,8 @@ class GS_SGD(Optimizer):
                 nesterov=group['nesterov'],
                 maximize=group['maximize'],
                 has_sparse_grad=has_sparse_grad,
-                foreach=group['foreach'])
+                foreach=group['foreach'],
+                name = group['name'])
 
             if len(params_with_grad) ==0:
                 pass
@@ -791,7 +775,7 @@ class GS_SGD(Optimizer):
             # update momentum_buffers in state
             for p, momentum_buffer in zip(params_with_grad, momentum_buffer_list):
                 state = self.state[p]
-                state['momentum_buffer'] = momentum_buffer
+                state['exp_avg'] = momentum_buffer
 
         return loss
 
@@ -803,6 +787,7 @@ def sgd(params: List[Tensor],
         # setting this as kwarg for now as functional API is compiled by torch/distributed/optim
         has_sparse_grad: bool = None,
         foreach: bool = None,
+        name:str =None,
         *,
         weight_decay: float,
         momentum: float,
@@ -836,7 +821,8 @@ def sgd(params: List[Tensor],
          dampening=dampening,
          nesterov=nesterov,
          has_sparse_grad=has_sparse_grad,
-         maximize=maximize)
+         maximize=maximize,
+         name=name)
     return list
 
 def sgd_xyz(params: List[Tensor],
@@ -897,6 +883,7 @@ def _single_tensor_sgd(params: List[Tensor],
                        dampening: float,
                        nesterov: bool,
                        maximize: bool,
+                       name:str = "",
                        type_sgd:int = 0,
                        has_sparse_grad: bool):
     if type_sgd == 1:
@@ -922,8 +909,9 @@ def _single_tensor_sgd(params: List[Tensor],
                     d_p = buf
                     
                     
-            original_param = torch.zeros_like(param)
-            original_param.copy_(param)
+                    
+            # original_param = torch.zeros_like(param)
+            # original_param.copy_(param)
             
             
             alpha = lr if maximize else -lr
@@ -931,7 +919,8 @@ def _single_tensor_sgd(params: List[Tensor],
             z_tensor.mul_(z_tensor)
             d_p.mul_(z_tensor)
             param.add_(d_p, alpha=alpha)
-            
+            d_p.div_(z_tensor)
+           
     else: 
         for i, param in enumerate(params):
 
@@ -939,6 +928,15 @@ def _single_tensor_sgd(params: List[Tensor],
             if weight_decay != 0:
                 d_p = d_p.add(param, alpha=weight_decay)
 
+            if name == "opacity":
+                sigmoid_opacity = torch.sigmoid(param)
+                d_p.divide_((sigmoid_opacity).mul(1-sigmoid_opacity))
+            #     # d_p.clamp_(-0.001,0.001)
+            
+            # if name == "scaling":
+            #     # d_p.divide_(torch.exp(param))
+            #     d_p.clamp_(-0.0001,0.0001)
+                
             if momentum != 0:
                 buf = momentum_buffer_list[i]
 
@@ -955,12 +953,15 @@ def _single_tensor_sgd(params: List[Tensor],
 
             alpha = lr if maximize else -lr
 
+                
+
             original_param = torch.zeros_like(param)
             original_param.copy_(param)
             param.add_(d_p, alpha=alpha)
     if len(params) == 0:
-        return[10000,10000,10000]
+        return[0,0,0]
     step_ = original_param - param
+    step_.abs()
     return (step_.min().cpu(),step_.mean().cpu(),step_.max().cpu())
        
 def _multi_tensor_sgd(params: List[Tensor],

@@ -93,11 +93,18 @@ def evaluate(model_paths):
             print("Unable to compute metrics for model", scene_dir)
 
 if __name__ == "__main__":
-    device = torch.device("cuda:0")
+    device = torch.device("cuda:7")
     torch.cuda.set_device(device)
 
     # Set up command line argument parser
     parser = ArgumentParser(description="Training script parameters")
-    parser.add_argument('--model_paths', '-m', required=True, nargs="+", type=str, default=[])
+    # parser.add_argument('--model_paths', '-m', required=True, nargs="+", type=str, default=[])
     args = parser.parse_args()
-    evaluate(args.model_paths)
+    
+    directory_path = '/data/guest_storage/zhanpengluo/copy_gs/gaussian-splatting/output/SGD_Evaluation/MipNerf'
+    file_paths = [os.path.join(directory_path, name) for name in os.listdir(directory_path) if os.path.isdir(os.path.join(directory_path, name))]
+
+    # args.model_path = 'NOT EXIST'
+
+    # for path in file_paths:
+    evaluate(file_paths)

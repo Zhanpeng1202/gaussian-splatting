@@ -20,8 +20,9 @@ from utils.sh_utils import RGB2SH
 from simple_knn._C import distCUDA2
 from utils.graphics_utils import BasicPointCloud
 from utils.general_utils import strip_symmetric, build_scaling_rotation
-# from .adapt_3dgs_opt import GS_Adam,GS_SGD
-from .visualize_optimization import GS_Adam, GS_SGD
+from .adapt_3dgs_opt import GS_Adam,GS_SGD,OG_SGD
+import math
+# from .visualize_optimization import GS_Adam, GS_SGD
 
 class GaussianModel:
 
@@ -101,6 +102,7 @@ class GaussianModel:
     @property
     def get_rotation(self):
         return self.rotation_activation(self._rotation)
+        # return self._rotation
     
     @property
     def get_xyz(self):
@@ -113,15 +115,7 @@ class GaussianModel:
         return torch.cat((features_dc, features_rest), dim=1)
     
     @property
-    def get_opacity(self):
-        # min = self._opacity.min()
-        # max = self._opacity.max()
-        # opacity = torch.zeros_like(self._opacity)
-        # opacity.copy_(self._opacity)
-
-        # return (opacity - min)/ (max-min+1e-6) 
-        
-        
+    def get_opacity(self):    
         return self.opacity_activation(self._opacity)
     
     def get_covariance(self, scaling_modifier = 1):
@@ -133,6 +127,7 @@ class GaussianModel:
 
     def create_from_pcd(self, pcd : BasicPointCloud, spatial_lr_scale : float):
         self.spatial_lr_scale = spatial_lr_scale
+        print(f"--------Spatial_lr_scale={spatial_lr_scale}")
         fused_point_cloud = torch.tensor(np.asarray(pcd.points)).float().cuda()
         fused_color = RGB2SH(torch.tensor(np.asarray(pcd.colors)).float().cuda())
         features = torch.zeros((fused_color.shape[0], 3, (self.max_sh_degree + 1) ** 2)).float().cuda()
@@ -268,29 +263,113 @@ class GaussianModel:
         self.denom = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
 
         l = [
-            {'params': [self._xyz], 'lr': training_args.position_lr_init * self.spatial_lr_scale, "name": "xyz"},
-            {'params': [self._features_dc], 'lr': training_args.feature_lr, "name": "f_dc"},
-            {'params': [self._features_rest], 'lr': training_args.feature_lr / 20.0, "name": "f_rest"},
-            {'params': [self._opacity], 'lr': training_args.opacity_lr, "name": "opacity"},
+            {'params': [self._xyz], 'lr': training_args.position_lr_init,"name": "xyz"},
+            # {'params': [self._xyz], 'lr': training_args.position_lr_init * self.spatial_lr_scale,"name": "xyz"},
+            {'params': [self._features_dc], 'lr': training_args.feature_dc_lr, "name": "f_dc",},
+            {'params': [self._features_rest], 'lr': training_args.feature_rest_lr,"name": "f_rest",},
+            # {'params': [self._opacity], 'lr': training_args.opacity_lr,"name": "opacity"},
             {'params': [self._scaling], 'lr': training_args.scaling_lr, "name": "scaling"},
-            {'params': [self._rotation], 'lr': training_args.rotation_lr, "name": "rotation"}
+            {'params': [self._rotation], 'lr': training_args.rotation_lr,"name": "rotation"}
+        ]
+        
+        self.feat_rest_lr = training_args.feature_rest_lr
+        self.rotation_lr = training_args.rotation_lr
+        
+        print(f"postion_lr_init:{training_args.position_lr_init}")
+        print(f"position_lr_final:{training_args.position_lr_final}")
+        print(f"feature_dc_lr:{training_args.feature_dc_lr}")
+        print(f"feature_rest_lr:{training_args.feature_rest_lr}")
+        print(f"rotation_lr:{training_args.rotation_lr}")
+        print(f"scaling_lr:{training_args.scaling_lr,}")
+        
+        l_opacity = [
+            # {'params': [self._xyz], 'lr': training_args.position_lr_init * self.spatial_lr_scale, "name": "xyz"},
+            # {'params': [self._features_dc], 'lr': training_args.feature_lr, "name": "f_dc"},
+            # {'params': [self._features_rest], 'lr': training_args.feature_lr / 20.0, "name": "f_rest"},
+            # {'params': [self._features_rest], 'lr': 0.0025 / 20.0, "name": "f_rest"},
+            {'params': [self._opacity], 'lr': training_args.opacity_lr, "name": "opacity"},
+            # {'params': [self._scaling], 'lr': training_args.scaling_lr, "name": "scaling"},
+            # {'params': [self._rotation], 'lr': training_args.rotation_lr, "name": "rotation"}
         ]
 
-        # self.optimizer = torch.optim.Adam(l, lr=0.0, eps=1e-15)
-        self.optimizer = GS_Adam(l,lr=0.1)
-        # self.optimizer = GS_SGD(l,lr=0.0)
-        self.xyz_scheduler_args = get_expon_lr_func(lr_init=training_args.position_lr_init*self.spatial_lr_scale,
-                                                    lr_final=training_args.position_lr_final*self.spatial_lr_scale,
-                                                    lr_delay_mult=training_args.position_lr_delay_mult,
-                                                    max_steps=training_args.position_lr_max_steps)
+        self.optimizer_opacity = GS_Adam(l_opacity,lr=0.0)
+        # self.optimizer= OG_SGD(l,lr=0.0)
+        self.optimizer = GS_SGD(l,lr=0.0)
+        
+        self.xyz_scheduler_args = get_expon_lr_func(lr_init=training_args.position_lr_init,
+                                            lr_final=training_args.position_lr_final,
+                                            lr_delay_mult=training_args.position_lr_delay_mult,
+                                            max_steps=training_args.position_lr_max_steps)
+        
+    def feature_lr_scheduler(self, iteration):
+
+        max_lr = self.feat_rest_lr
+        
+        lr = max_lr*(1-0.99*(iteration)/30000)
+            
+        return lr
+    
+        
+    def rotation_lr_scheduler(self, iteration):
+        
+
+        max_lr = self.rotation_lr
+        
+        lr = max_lr*(1-0.99*(iteration)/(30000))
+        
+        return lr
+    
+        
+    
+    def opacity_lr_scheduler(self, iteration):
+        threshold_2 = 3000
+        min_lr = 0.25
+        max_lr = 50
+
+        if iteration < threshold_2:
+            lr = min_lr + 0.5*(max_lr-min_lr)*(1+math.cos(math.pi*(iteration/3000-1)))
+        elif iteration<15000:
+            lr = max_lr*(1-0.9*(iteration-threshold_2)/(15000-threshold_2))
+        else:
+            lr = min_lr
+        
+
+        return lr
+    
+    def xyz_lr_scheduler(self, iteration):
+        threshold_2 = 3000
+        min_lr = 0.0001
+        max_lr = 0.01
+
+        if iteration < threshold_2:
+            lr = min_lr + (max_lr-min_lr)*(1+math.cos(math.pi*(iteration/3000-1)))
+        else:
+            lr = 0.002*(1-0.9*(iteration-threshold_2)/(30000-threshold_2))
+        return lr
 
     def update_learning_rate(self, iteration):
         ''' Learning rate scheduling per step '''
         for param_group in self.optimizer.param_groups:
+            # if param_group["name"] == "xyz":
+            #     lr = self.xyz_lr_scheduler(iteration)
+            #     param_group['lr'] = lr
             if param_group["name"] == "xyz":
                 lr = self.xyz_scheduler_args(iteration)
                 param_group['lr'] = lr
-                return lr
+
+            # if  param_group["name"] == "f_rest":
+            #     lr = self.feature_lr_scheduler(iteration)
+            #     param_group['lr'] = lr      
+            
+            if param_group["name"] == "rotation":
+                lr = self.rotation_lr_scheduler(iteration)
+                param_group['lr'] = lr  
+            
+            # if param_group["name"] == "opacity":
+            #     lr = self.opacity_lr_scheduler(iteration)
+            #     param_group['lr'] = lr      
+                
+        return lr
 
     def construct_list_of_attributes(self):
         l = ['x', 'y', 'z', 'nx', 'ny', 'nz']
@@ -310,6 +389,7 @@ class GaussianModel:
         mkdir_p(os.path.dirname(path))
 
         xyz = self._xyz.detach().cpu().numpy()
+        print(xyz.shape[0])
         normals = np.zeros_like(xyz)
         f_dc = self._features_dc.detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()
         f_rest = self._features_rest.detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()
@@ -326,7 +406,8 @@ class GaussianModel:
         PlyData([el]).write(path)
 
     def reset_opacity(self):
-        opacities_new = inverse_sigmoid(torch.min(self.get_opacity, torch.ones_like(self.get_opacity)*0.01))
+        # opacities_new = inverse_sigmoid(torch.min(self.get_opacity, torch.ones_like(self.get_opacity)*0.01))
+        opacities_new = inverse_sigmoid(torch.ones_like(self.get_opacity)*0.01)
         optimizable_tensors = self.replace_tensor_to_optimizer(opacities_new, "opacity")
         self._opacity = optimizable_tensors["opacity"]
 
@@ -375,7 +456,7 @@ class GaussianModel:
 
     def replace_tensor_to_optimizer(self, tensor, name):
         optimizable_tensors = {}
-        for group in self.optimizer.param_groups:
+        for group in self.optimizer.param_groups :
             if group["name"] == name:
                 stored_state = self.optimizer.state.get(group['params'][0], None)
                 stored_state["exp_avg"] = torch.zeros_like(tensor)
@@ -384,6 +465,19 @@ class GaussianModel:
                 del self.optimizer.state[group['params'][0]]
                 group["params"][0] = nn.Parameter(tensor.requires_grad_(True))
                 self.optimizer.state[group['params'][0]] = stored_state
+
+                optimizable_tensors[group["name"]] = group["params"][0]
+                
+        # and self.optimizer_opacity
+        for group in self.optimizer_opacity.param_groups :
+            if group["name"] == name:
+                stored_state = self.optimizer_opacity.state.get(group['params'][0], None)
+                stored_state["exp_avg"] = torch.zeros_like(tensor)
+                stored_state["exp_avg_sq"] = torch.zeros_like(tensor)
+
+                del self.optimizer_opacity.state[group['params'][0]]
+                group["params"][0] = nn.Parameter(tensor.requires_grad_(True))
+                self.optimizer_opacity.state[group['params'][0]] = stored_state
 
                 optimizable_tensors[group["name"]] = group["params"][0]
         return optimizable_tensors
@@ -404,6 +498,23 @@ class GaussianModel:
             else:
                 group["params"][0] = nn.Parameter(group["params"][0][mask].requires_grad_(True))
                 optimizable_tensors[group["name"]] = group["params"][0]
+                
+    
+        for group in self.optimizer_opacity.param_groups:
+            stored_state = self.optimizer_opacity.state.get(group['params'][0], None)
+            if stored_state is not None:
+                stored_state["exp_avg"] = stored_state["exp_avg"][mask]
+                stored_state["exp_avg_sq"] = stored_state["exp_avg_sq"][mask]
+
+                del self.optimizer_opacity.state[group['params'][0]]
+                group["params"][0] = nn.Parameter((group["params"][0][mask].requires_grad_(True)))
+                self.optimizer_opacity.state[group['params'][0]] = stored_state
+
+                optimizable_tensors[group["name"]] = group["params"][0]
+            else:
+                group["params"][0] = nn.Parameter(group["params"][0][mask].requires_grad_(True))
+                optimizable_tensors[group["name"]] = group["params"][0]
+                
         return optimizable_tensors
 
     def prune_points(self, mask):
@@ -436,6 +547,24 @@ class GaussianModel:
                 del self.optimizer.state[group['params'][0]]
                 group["params"][0] = nn.Parameter(torch.cat((group["params"][0], extension_tensor), dim=0).requires_grad_(True))
                 self.optimizer.state[group['params'][0]] = stored_state
+
+                optimizable_tensors[group["name"]] = group["params"][0]
+            else:
+                group["params"][0] = nn.Parameter(torch.cat((group["params"][0], extension_tensor), dim=0).requires_grad_(True))
+                optimizable_tensors[group["name"]] = group["params"][0]
+                
+        for group in self.optimizer_opacity.param_groups:
+            assert len(group["params"]) == 1
+            extension_tensor = tensors_dict[group["name"]]
+            stored_state = self.optimizer_opacity.state.get(group['params'][0], None)
+            if stored_state is not None:
+
+                stored_state["exp_avg"] = torch.cat((stored_state["exp_avg"], torch.zeros_like(extension_tensor)), dim=0)
+                stored_state["exp_avg_sq"] = torch.cat((stored_state["exp_avg_sq"], torch.zeros_like(extension_tensor)), dim=0)
+
+                del self.optimizer_opacity.state[group['params'][0]]
+                group["params"][0] = nn.Parameter(torch.cat((group["params"][0], extension_tensor), dim=0).requires_grad_(True))
+                self.optimizer_opacity.state[group['params'][0]] = stored_state
 
                 optimizable_tensors[group["name"]] = group["params"][0]
             else:
@@ -478,7 +607,9 @@ class GaussianModel:
         samples = torch.normal(mean=means, std=stds)
         rots = build_rotation(self._rotation[selected_pts_mask]).repeat(N,1,1)
         new_xyz = torch.bmm(rots, samples.unsqueeze(-1)).squeeze(-1) + self.get_xyz[selected_pts_mask].repeat(N, 1)
+        # new_scaling = self.scaling_inverse_activation(self.get_scaling[selected_pts_mask].repeat(N,1))
         new_scaling = self.scaling_inverse_activation(self.get_scaling[selected_pts_mask].repeat(N,1) / (0.8*N))
+        
         new_rotation = self._rotation[selected_pts_mask].repeat(N,1)
         new_features_dc = self._features_dc[selected_pts_mask].repeat(N,1,1)
         new_features_rest = self._features_rest[selected_pts_mask].repeat(N,1,1)

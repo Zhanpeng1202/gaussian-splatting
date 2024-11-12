@@ -44,10 +44,12 @@ class ParamGroup:
         return group
 
 class ModelParams(ParamGroup): 
-    def __init__(self, parser, sentinel=False):
+    def __init__(self, parser, sentinel=False,sp=None,mp=None):
         self.sh_degree = 3
-        self._source_path = "/data/guest_storage/zhanpengluo/gaussian-splatting/tandt/train"
-        self._model_path = "/data/guest_storage/zhanpengluo/gaussian-splatting/output/GS_SGD_train"
+            
+        self._source_path = "/data/guest_storage/zhanpengluo/Dataset/MipNerf/bonsai"
+        self._model_path = "/data/guest_storage/zhanpengluo/copy_gs/gaussian-splatting/output/bicycle_gs"
+
         self._images = "images"
         self._resolution = -1
         self._white_background = False
@@ -72,47 +74,69 @@ class OptimizationParams(ParamGroup):
     # ------------------------- HyperParameter For SGD
 
     # def __init__(self, parser):
-    #         self.iterations = 30_000
-    #         self.position_lr_init = 0.003
-    #         self.position_lr_final = 0.0001
-    #         self.position_lr_delay_mult = 0.01
-    #         self.position_lr_max_steps = 30_000
-    #         self.feature_lr = 0.125
-    #         self.opacity_lr = 5
-    #         self.scaling_lr = 0.5
-    #         self.rotation_lr = 0.1
-    #         self.percent_dense = 0.01
-    #         self.lambda_dssim = 0.2
-    #         self.densification_interval = 100
-    #         self.opacity_reset_interval = 3000000
-    #         self.densify_from_iter = 500
-    #         self.densify_until_iter = 15_000
-    #         self.densify_grad_threshold = 0.0001
-    #         self.random_background = False
-    #         super().__init__(parser, "Optimization Parameters")
+        # self.iterations = 30_000
+        # self.position_lr_init  = 2
+        # self.position_lr_final = 0.01
+        # self.position_lr_delay_mult = 0.01
+        # self.position_lr_max_steps = 30_000
+        # self.feature_lr = 2000
+        # self.opacity_lr = 0.05
+        # self.scaling_lr = 0.005
+        # self.rotation_lr = 100
+        # self.percent_dense = 0.01
+        # self.lambda_dssim = 0.2
+        # self.densification_interval = 100
+        # self.opacity_reset_interval = 3000000
+        # self.densify_from_iter = 500
+        # self.densify_until_iter = 15_000
+        # self.densify_grad_threshold = 0.00012
+        # self.random_background = False
+        # super().__init__(parser, "Optimization Parameters")
+    
+    
+    def __init__(self, parser):
+        self.iterations = 30_000
+        self.position_lr_init  = 3
+        self.position_lr_final = 0.01 
+        self.position_lr_delay_mult = 0.01
+        self.position_lr_max_steps = 30_000
+        self.feature_dc_lr = 2000 
+        self.feature_rest_lr = 700 
+        self.opacity_lr = 0.05 
+        self.scaling_lr = 0.005
+        self.rotation_lr = 2000
+        self.percent_dense = 0.01
+        self.lambda_dssim = 0.2
+        self.densification_interval = 100
+        self.opacity_reset_interval = 3000
+        self.densify_from_iter = 500
+        self.densify_until_iter = 15_000
+        self.densify_grad_threshold = 0.00012
+        self.random_background = False
+        
+        super().__init__(parser, "Optimization Parameters")
             
             
     # ----------------- Hyper Parameter for Adam
-    def __init__(self, parser):
-            self.iterations = 30_000
-            self.position_lr_init = 0.00003
-            self.position_lr_final = 0.000001
-            self.position_lr_delay_mult = 0.01
-            self.position_lr_max_steps = 30_000
-            self.feature_lr = 0.0025
-            self.opacity_lr = 0.05
-            self.scaling_lr = 0.005
-            self.rotation_lr = 0.001
-            self.percent_dense = 0.01
-            self.lambda_dssim = 0.2
-            self.densification_interval = 100
-            self.opacity_reset_interval = 3000
-            self.densify_from_iter = 500
-            self.densify_until_iter = 15_000
-            self.densify_grad_threshold = 0.0002
-            self.random_background = False
-            super().__init__(parser, "Optimization Parameters")
-
+    # def __init__(self, parser):
+    #         self.iterations = 30_000
+    #         self.position_lr_init = 0.00003
+    #         self.position_lr_final = 0.000001
+    #         self.position_lr_delay_mult = 0.01
+    #         self.position_lr_max_steps = 30_000
+    #         self.feature_lr = 0.0025
+    #         self.opacity_lr = 0.05
+    #         self.scaling_lr = 0.005
+    #         self.rotation_lr = 0.001
+    #         self.percent_dense = 0.01
+    #         self.lambda_dssim = 0.2
+    #         self.densification_interval = 100
+    #         self.opacity_reset_interval = 3000
+    #         self.densify_from_iter = 500
+    #         self.densify_until_iter = 15_000
+    #         self.densify_grad_threshold = 0.0002
+    #         self.random_background = False
+    #         super().__init__(parser, "Optimization Parameters")
 
 def get_combined_args(parser : ArgumentParser):
     cmdlne_string = sys.argv[1:]
@@ -121,6 +145,28 @@ def get_combined_args(parser : ArgumentParser):
 
     try:
         cfgfilepath = os.path.join(args_cmdline.model_path, "cfg_args")
+        print("Looking for config file in", cfgfilepath)
+        with open(cfgfilepath) as cfg_file:
+            print("Config file found: {}".format(cfgfilepath))
+            cfgfile_string = cfg_file.read()
+    except TypeError:
+        print("Config file not found at")
+        pass
+    args_cfgfile = eval(cfgfile_string)
+
+    merged_dict = vars(args_cfgfile).copy()
+    for k,v in vars(args_cmdline).items():
+        if v != None:
+            merged_dict[k] = v
+    return Namespace(**merged_dict)
+
+def modified_args(parser : ArgumentParser, model_path):
+    cmdlne_string = sys.argv[1:]
+    cfgfile_string = "Namespace()"
+    args_cmdline = parser.parse_args(cmdlne_string)
+
+    try:
+        cfgfilepath = os.path.join(model_path, "cfg_args")
         print("Looking for config file in", cfgfilepath)
         with open(cfgfilepath) as cfg_file:
             print("Config file found: {}".format(cfgfilepath))

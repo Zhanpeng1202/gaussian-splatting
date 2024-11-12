@@ -97,7 +97,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
     viewpoint_stack = None
     ema_loss_for_log = 0.0
-    progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
+    # progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
     first_iter += 1
     web_cam = copy.deepcopy(scene.getTrainCameras()[0])
     x0,y0,z0 = web_cam.T
@@ -141,20 +141,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         iter_start.record()
 
         gaussians.update_learning_rate(iteration)
-
-        # Visualize the opacity & gradient every 1000 itrs
-        path = "/data/guest_storage/zhanpengluo/copy_gs/gaussian-splatting/visualization_parameter/scaling"
-        if iteration%5000 ==0:
-            visualize(gaussians.optimizer,"xyz",path=path)
-            visualize(gaussians.optimizer,"f_dc",path=path)
-            visualize(gaussians.optimizer,"f_rest",path=path)
-            visualize(gaussians.optimizer,"opacity",path=path)
-            visualize(gaussians.optimizer,"scaling",path=path)
-            visualize(gaussians.optimizer,"rotation",path=path)
-
-
-
-
+        
         # Every 1000 its we increase the levels of SH up to a maximum degree
         if iteration % 1000 == 0:
             gaussians.oneupSHdegree()
@@ -185,18 +172,21 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         with torch.no_grad():
             # Progress bar
             ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log
-            if iteration % 10 == 0:
-                progress_bar.set_postfix({"Loss": f"{ema_loss_for_log:.{7}f}"})
-                progress_bar.update(10)
-            if iteration == opt.iterations:
-                progress_bar.close()
+            # print(iteration)
+            # if iteration % 10 == 0:
+            #     progress_bar.set_postfix({"Loss": f"{ema_loss_for_log:.{7}f}"})
+            #     progress_bar.update(10)
+            # if iteration == opt.iterations:
+            #     progress_bar.close()
 
             # Log and save
             training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, render, (pipe, background))
+            if (iteration in testing_iterations):
+                print(f"Iterations: {iteration} & Number of points:{gaussians._xyz.shape[0]}")
+            #     scene.save(iteration)
             if (iteration in saving_iterations):
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
                 scene.save(iteration)
-
             # Densification
             if iteration < opt.densify_until_iter:
                 # Keep track of max radii in image-space for pruning
@@ -206,6 +196,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
                     size_threshold = 20 if iteration > opt.opacity_reset_interval else None
                     gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold)
+
                 
                 if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):
                     gaussians.reset_opacity()
@@ -213,16 +204,14 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             # Optimizer step
             if iteration < opt.iterations:
                 gaussians.optimizer.step(viewpoint_cam.getViewMatrix())
+                # gaussians.optimizer.step()
                 gaussians.optimizer.zero_grad(set_to_none = True)
                 
                 gaussians.optimizer_opacity.step(viewpoint_cam.getViewMatrix())
                 gaussians.optimizer_opacity.zero_grad(set_to_none=True)
 
-            if (iteration in checkpoint_iterations):
-                print("\n[ITER {}] Saving Checkpoint".format(iteration))
-                torch.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
-        
 
+        
 
 def prepare_output_and_logger(args):    
     if not args.model_path:
@@ -282,6 +271,13 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
             tb_writer.add_histogram("scene/opacity_histogram", scene.gaussians.get_opacity, iteration)
             tb_writer.add_scalar('total_points', scene.gaussians.get_xyz.shape[0], iteration)
         torch.cuda.empty_cache()
+        
+        # return psnr_test
+
+
+
+
+import itertools
 
 if __name__ == "__main__":
     # Set up command line argument parser
@@ -289,8 +285,10 @@ if __name__ == "__main__":
     lp = ModelParams(parser)
     op = OptimizationParams(parser)
     pp = PipelineParams(parser)
+    
+
     parser.add_argument('--ip', type=str, default="127.0.0.1")
-    parser.add_argument('--port', type=int, default=6019)
+    parser.add_argument('--port', type=int, default=6119)
     parser.add_argument('--debug_from', type=int, default=-1)
     parser.add_argument('--detect_anomaly', action='store_true', default=False)
     parser.add_argument("--test_iterations", nargs="+", type=int, default=[5_000, 10_000, 20_000, 30_000])
@@ -301,6 +299,11 @@ if __name__ == "__main__":
     args = parser.parse_args(sys.argv[1:])
     args.save_iterations.append(args.iterations)
     
+    model_arg = lp.extract(args)
+    opt_arg   = op.extract(args)
+    pipe_arg  = pp.extract(args)
+    
+    
     print("Optimizing " + args.model_path)
 
     safe_state(args.quiet)
@@ -308,13 +311,64 @@ if __name__ == "__main__":
     # Start GUI server, configure and run training
     network_gui_ws.init(args.ip, args.port)
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
-    training(lp.extract(args),
-             op.extract(args),
-             pp.extract(args),
+    
+    # Tuning on the Truck dataset
+    #
+    
+
+    print("----------This is our SGD evaluation on the MipNerf Datatset")
+    # position_lr_init  = [5,3,1,0.5]
+    # position_lr_final = [0.05,0.01,0.005]
+    
+    position_lr_init  = [3]
+    position_lr_final = [0.01]
+    feature_dc_lr =     [2000]
+    feature_rest_lr =   [700]
+    rotation_lr =       [2000]
+    scaling_lr =        [10,20,40]
+    
+    directory_path = '/data/guest_storage/zhanpengluo/Dataset/MipNerf'
+    file_paths = [os.path.join(directory_path, name) for name in os.listdir(directory_path) if os.path.isdir(os.path.join(directory_path, name))]
+    file_paths= ['/data/guest_storage/zhanpengluo/Dataset/MipNerf/bonsai']
+
+        
+    
+    param_grid = list(itertools.product(position_lr_init, 
+                                        position_lr_final,
+                                        feature_dc_lr,
+                                        feature_rest_lr,
+                                        rotation_lr,
+                                        scaling_lr,
+                                        file_paths ))
+    
+    for xyz_init,xyz_final,feat_dc,feat_rest,rotate,scale,f_path in param_grid:
+        
+        opt_arg.position_lr_init = xyz_init
+        opt_arg.position_lr_final = xyz_final
+        opt_arg.feature_dc_lr = feat_dc
+        opt_arg.feature_rest_lr = feat_rest
+        opt_arg.rotation_lr =rotate
+        opt_arg.scaling_lr = scale
+        
+        model_arg.source_path= f_path
+        model_arg.model_path = os.path.join("/data/guest_storage/zhanpengluo/copy_gs/gaussian-splatting/output/SGD_Evaluation/MipNerf",os.path.basename(f_path))
+        print(f"optimizing {os.path.basename(f_path)}")
+        if(os.path.basename(f_path)=='stump' or os.path.basename(f_path)=='grass'):
+            opt_arg.densify_until_iter = 10_000
+            opt_arg.densify_grad_threshold = 0.00015
+        
+        training(model_arg,
+             opt_arg,
+             pipe_arg,
              args.test_iterations,
              args.save_iterations,
              args.checkpoint_iterations,
              args.start_checkpoint,
              args.debug_from)
-
+        
+    
+    
+    
     print("\nTraining complete.")
+    sys.exit(0)
+
