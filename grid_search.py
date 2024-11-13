@@ -203,11 +203,11 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
             # Optimizer step
             if iteration < opt.iterations:
-                gaussians.optimizer.step(viewpoint_cam.getViewMatrix())
-                # gaussians.optimizer.step()
+                # gaussians.optimizer.step(viewpoint_cam.getViewMatrix())
+                gaussians.optimizer.step()
                 gaussians.optimizer.zero_grad(set_to_none = True)
                 
-                gaussians.optimizer_opacity.step(viewpoint_cam.getViewMatrix())
+                gaussians.optimizer_opacity.step()
                 gaussians.optimizer_opacity.zero_grad(set_to_none=True)
 
 
@@ -320,16 +320,16 @@ if __name__ == "__main__":
     # position_lr_init  = [5,3,1,0.5]
     # position_lr_final = [0.05,0.01,0.005]
     
-    position_lr_init  = [3]
-    position_lr_final = [0.01]
+    position_lr_init  = [5]
+    position_lr_final = [0.05]
     feature_dc_lr =     [2000]
     feature_rest_lr =   [700]
     rotation_lr =       [2000]
-    scaling_lr =        [10,20,40]
+    scaling_lr =        [0.005]
     
     directory_path = '/data/guest_storage/zhanpengluo/Dataset/MipNerf'
     file_paths = [os.path.join(directory_path, name) for name in os.listdir(directory_path) if os.path.isdir(os.path.join(directory_path, name))]
-    file_paths= ['/data/guest_storage/zhanpengluo/Dataset/MipNerf/bonsai']
+    # file_paths= ['/data/guest_storage/zhanpengluo/Dataset/MipNerf/bonsai']
 
         
     
@@ -351,7 +351,7 @@ if __name__ == "__main__":
         opt_arg.scaling_lr = scale
         
         model_arg.source_path= f_path
-        model_arg.model_path = os.path.join("/data/guest_storage/zhanpengluo/copy_gs/gaussian-splatting/output/SGD_Evaluation/MipNerf",os.path.basename(f_path))
+        model_arg.model_path = os.path.join("/data/guest_storage/zhanpengluo/copy_gs/gaussian-splatting/output/SGD_Without_Compensation/MipNerf",os.path.basename(f_path))
         print(f"optimizing {os.path.basename(f_path)}")
         if(os.path.basename(f_path)=='stump' or os.path.basename(f_path)=='grass'):
             opt_arg.densify_until_iter = 10_000

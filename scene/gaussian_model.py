@@ -245,7 +245,7 @@ class GaussianModel:
         ]
 
         # self.optimizer = torch.optim.Adam(l, lr=0.0, eps=1e-15)
-        self.optimizer = GS_SGD(l,lr=0.1)
+        # self.optimizer = GS_SGD(l,lr=0.1)
         # self.optimizer = torch.optim.SGD(l, lr=1e-1)
         # self.optimizer = GS_Adam(l, lr=0.0, eps=1e-15)
         self.xyz_scheduler_args = get_expon_lr_func(lr_init=training_args.position_lr_init*self.spatial_lr_scale,
@@ -264,11 +264,10 @@ class GaussianModel:
 
         l = [
             {'params': [self._xyz], 'lr': training_args.position_lr_init,"name": "xyz"},
-            # {'params': [self._xyz], 'lr': training_args.position_lr_init * self.spatial_lr_scale,"name": "xyz"},
             {'params': [self._features_dc], 'lr': training_args.feature_dc_lr, "name": "f_dc",},
             {'params': [self._features_rest], 'lr': training_args.feature_rest_lr,"name": "f_rest",},
             # {'params': [self._opacity], 'lr': training_args.opacity_lr,"name": "opacity"},
-            {'params': [self._scaling], 'lr': training_args.scaling_lr, "name": "scaling"},
+            # {'params': [self._scaling], 'lr': training_args.scaling_lr, "name": "scaling"},
             {'params': [self._rotation], 'lr': training_args.rotation_lr,"name": "rotation"}
         ]
         
@@ -281,20 +280,21 @@ class GaussianModel:
         print(f"feature_rest_lr:{training_args.feature_rest_lr}")
         print(f"rotation_lr:{training_args.rotation_lr}")
         print(f"scaling_lr:{training_args.scaling_lr,}")
+        print(f"opactiy_lr:{training_args.opacity_lr,}")
         
-        l_opacity = [
+        l_adam = [
             # {'params': [self._xyz], 'lr': training_args.position_lr_init * self.spatial_lr_scale, "name": "xyz"},
             # {'params': [self._features_dc], 'lr': training_args.feature_lr, "name": "f_dc"},
             # {'params': [self._features_rest], 'lr': training_args.feature_lr / 20.0, "name": "f_rest"},
             # {'params': [self._features_rest], 'lr': 0.0025 / 20.0, "name": "f_rest"},
             {'params': [self._opacity], 'lr': training_args.opacity_lr, "name": "opacity"},
-            # {'params': [self._scaling], 'lr': training_args.scaling_lr, "name": "scaling"},
+            {'params': [self._scaling], 'lr': training_args.scaling_lr, "name": "scaling"},
             # {'params': [self._rotation], 'lr': training_args.rotation_lr, "name": "rotation"}
         ]
 
-        self.optimizer_opacity = GS_Adam(l_opacity,lr=0.0)
-        # self.optimizer= OG_SGD(l,lr=0.0)
-        self.optimizer = GS_SGD(l,lr=0.0)
+        self.optimizer_opacity = torch.optim.Adam(l_adam,lr=0.0)
+        self.optimizer= OG_SGD(l,lr=0.0)
+        # self.optimizer = GS_SGD(l,lr=0.0)
         
         self.xyz_scheduler_args = get_expon_lr_func(lr_init=training_args.position_lr_init,
                                             lr_final=training_args.position_lr_final,
@@ -558,7 +558,6 @@ class GaussianModel:
             extension_tensor = tensors_dict[group["name"]]
             stored_state = self.optimizer_opacity.state.get(group['params'][0], None)
             if stored_state is not None:
-
                 stored_state["exp_avg"] = torch.cat((stored_state["exp_avg"], torch.zeros_like(extension_tensor)), dim=0)
                 stored_state["exp_avg_sq"] = torch.cat((stored_state["exp_avg_sq"], torch.zeros_like(extension_tensor)), dim=0)
 

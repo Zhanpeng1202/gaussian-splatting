@@ -834,7 +834,8 @@ class OG_SGD(Optimizer):
                 nesterov=group['nesterov'],
                 maximize=group['maximize'],
                 has_sparse_grad=has_sparse_grad,
-                foreach=group['foreach'])
+                foreach=group['foreach'],
+                param_name="pass")
 
 
             # update momentum_buffers in state
