@@ -20,7 +20,7 @@ from utils.sh_utils import RGB2SH
 from simple_knn._C import distCUDA2
 from utils.graphics_utils import BasicPointCloud
 from utils.general_utils import strip_symmetric, build_scaling_rotation
-from .adapt_3dgs_opt import GS_Adam,GS_SGD,OG_SGD
+from .adapt_3dgs_opt import GS_SGD,OG_SGD
 import math
 # from .visualize_optimization import GS_Adam, GS_SGD
 
@@ -264,11 +264,11 @@ class GaussianModel:
 
         l = [
             {'params': [self._xyz], 'lr': training_args.position_lr_init,"name": "xyz"},
-            {'params': [self._features_dc], 'lr': training_args.feature_dc_lr, "name": "f_dc",},
-            {'params': [self._features_rest], 'lr': training_args.feature_rest_lr,"name": "f_rest",},
+            # {'params': [self._features_dc], 'lr': training_args.feature_dc_lr, "name": "f_dc",},
+            # {'params': [self._features_rest], 'lr': training_args.feature_rest_lr,"name": "f_rest",},
             # {'params': [self._opacity], 'lr': training_args.opacity_lr,"name": "opacity"},
             # {'params': [self._scaling], 'lr': training_args.scaling_lr, "name": "scaling"},
-            {'params': [self._rotation], 'lr': training_args.rotation_lr,"name": "rotation"}
+            # {'params': [self._rotation], 'lr': training_args.rotation_lr,"name": "rotation"}
         ]
         
         self.feat_rest_lr = training_args.feature_rest_lr
@@ -276,6 +276,7 @@ class GaussianModel:
         
         print(f"postion_lr_init:{training_args.position_lr_init}")
         print(f"position_lr_final:{training_args.position_lr_final}")
+        # print(f"-------------others use Adam")
         print(f"feature_dc_lr:{training_args.feature_dc_lr}")
         print(f"feature_rest_lr:{training_args.feature_rest_lr}")
         print(f"rotation_lr:{training_args.rotation_lr}")
@@ -284,17 +285,16 @@ class GaussianModel:
         
         l_adam = [
             # {'params': [self._xyz], 'lr': training_args.position_lr_init * self.spatial_lr_scale, "name": "xyz"},
-            # {'params': [self._features_dc], 'lr': training_args.feature_lr, "name": "f_dc"},
-            # {'params': [self._features_rest], 'lr': training_args.feature_lr / 20.0, "name": "f_rest"},
-            # {'params': [self._features_rest], 'lr': 0.0025 / 20.0, "name": "f_rest"},
+            {'params': [self._features_dc], 'lr': 0.0025, "name": "f_dc"},
+            {'params': [self._features_rest], 'lr': 0.0025 / 20.0, "name": "f_rest"},
             {'params': [self._opacity], 'lr': training_args.opacity_lr, "name": "opacity"},
             {'params': [self._scaling], 'lr': training_args.scaling_lr, "name": "scaling"},
-            # {'params': [self._rotation], 'lr': training_args.rotation_lr, "name": "rotation"}
+            {'params': [self._rotation], 'lr': 0.001, "name": "rotation"}
         ]
 
         self.optimizer_opacity = torch.optim.Adam(l_adam,lr=0.0)
-        self.optimizer= OG_SGD(l,lr=0.0)
-        # self.optimizer = GS_SGD(l,lr=0.0)
+        # self.optimizer= OG_SGD(l,lr=0.0)
+        self.optimizer = GS_SGD(l,lr=0.0)
         
         self.xyz_scheduler_args = get_expon_lr_func(lr_init=training_args.position_lr_init,
                                             lr_final=training_args.position_lr_final,
@@ -311,15 +311,10 @@ class GaussianModel:
     
         
     def rotation_lr_scheduler(self, iteration):
-        
-
         max_lr = self.rotation_lr
-        
         lr = max_lr*(1-0.99*(iteration)/(30000))
         
         return lr
-    
-        
     
     def opacity_lr_scheduler(self, iteration):
         threshold_2 = 3000
@@ -348,26 +343,18 @@ class GaussianModel:
         return lr
 
     def update_learning_rate(self, iteration):
+        
         ''' Learning rate scheduling per step '''
         for param_group in self.optimizer.param_groups:
-            # if param_group["name"] == "xyz":
-            #     lr = self.xyz_lr_scheduler(iteration)
-            #     param_group['lr'] = lr
+
             if param_group["name"] == "xyz":
                 lr = self.xyz_scheduler_args(iteration)
                 param_group['lr'] = lr
 
-            # if  param_group["name"] == "f_rest":
-            #     lr = self.feature_lr_scheduler(iteration)
-            #     param_group['lr'] = lr      
+            # if param_group["name"] == "rotation":
+            #     lr = self.rotate_scheduler_args(iteration)
+            #     param_group['lr'] = lr  
             
-            if param_group["name"] == "rotation":
-                lr = self.rotation_lr_scheduler(iteration)
-                param_group['lr'] = lr  
-            
-            # if param_group["name"] == "opacity":
-            #     lr = self.opacity_lr_scheduler(iteration)
-            #     param_group['lr'] = lr      
                 
         return lr
 
@@ -406,8 +393,8 @@ class GaussianModel:
         PlyData([el]).write(path)
 
     def reset_opacity(self):
-        # opacities_new = inverse_sigmoid(torch.min(self.get_opacity, torch.ones_like(self.get_opacity)*0.01))
-        opacities_new = inverse_sigmoid(torch.ones_like(self.get_opacity)*0.01)
+        opacities_new = inverse_sigmoid(torch.min(self.get_opacity, torch.ones_like(self.get_opacity)*0.01))
+        # opacities_new = inverse_sigmoid(torch.ones_like(self.get_opacity)*0.01)
         optimizable_tensors = self.replace_tensor_to_optimizer(opacities_new, "opacity")
         self._opacity = optimizable_tensors["opacity"]
 

@@ -184,21 +184,18 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             if (iteration in testing_iterations):
                 print(f"Iterations: {iteration} & Number of points:{gaussians._xyz.shape[0]}")
             #     scene.save(iteration)
-            # if (iteration in saving_iterations):
-            #     print("\n[ITER {}] Saving Gaussians".format(iteration))
-            #     scene.save(iteration)
+            if (iteration in saving_iterations):
+                print("\n[ITER {}] Saving Gaussians".format(iteration))
+                scene.save(iteration)
             # Densification
             if iteration < opt.densify_until_iter:
                 # Keep track of max radii in image-space for pruning
                 gaussians.max_radii2D[visibility_filter] = torch.max(gaussians.max_radii2D[visibility_filter], radii[visibility_filter])
                 gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
-                
-                
 
                 if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
                     size_threshold = 20 if iteration > opt.opacity_reset_interval else None
-                    if(gaussians._xyz.shape[0]<6500000):
-                        gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold)
+                    gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold)
 
                 
                 if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):
@@ -266,9 +263,13 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
                 psnr_test /= len(config['cameras'])
                 l1_test /= len(config['cameras'])          
                 print("\n[ITER {}] Evaluating {}: L1 {} PSNR {}".format(iteration, config['name'], l1_test, psnr_test))
+                # Ray Tune 
+                train.report({"psnr": psnr_test})
+                
                 if tb_writer:
                     tb_writer.add_scalar(config['name'] + '/loss_viewpoint - l1_loss', l1_test, iteration)
                     tb_writer.add_scalar(config['name'] + '/loss_viewpoint - psnr', psnr_test, iteration)
+                    
 
         if tb_writer:
             tb_writer.add_histogram("scene/opacity_histogram", scene.gaussians.get_opacity, iteration)
@@ -278,18 +279,43 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
         # return psnr_test
 
 
+def raytune_training(config):
+    
+    
+    opt_arg.position_lr_init = config["xyz_init"]
+    opt_arg.position_lr_final = config["xyz_final"]
+    opt_arg.feature_dc_lr = config["feat_dc"]
+    opt_arg.feature_rest_lr = config["feat_rest"]
+    opt_arg.rotation_lr = config["rotate"]
+    
+    
+    training(model_arg,
+            opt_arg,
+            pipe_arg,
+            args.test_iterations,
+            args.save_iterations,
+            args.checkpoint_iterations,
+            args.start_checkpoint,
+            args.debug_from)
+    
 
+global model_arg
+global opt_arg
+global pipe_arg
+global args
 
 import itertools
+from ray import tune
+from ray.tune.schedulers import ASHAScheduler
+from ray import train
+from ray.tune.search.hyperopt import HyperOptSearch
 
 if __name__ == "__main__":
-    # Set up command line argument parser
     parser = ArgumentParser(description="Training script parameters")
     lp = ModelParams(parser)
     op = OptimizationParams(parser)
     pp = PipelineParams(parser)
     
-
     parser.add_argument('--ip', type=str, default="127.0.0.1")
     parser.add_argument('--port', type=int, default=6119)
     parser.add_argument('--debug_from', type=int, default=-1)
@@ -308,66 +334,45 @@ if __name__ == "__main__":
     
     
     print("Optimizing " + args.model_path)
-
     safe_state(args.quiet)
-
-    # Start GUI server, configure and run training
     network_gui_ws.init(args.ip, args.port)
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
     
-    # Tuning on the Truck dataset
-    #
-    
-
     print("----------This is our SGD evaluation on the MipNerf Datatset")
 
-    
     position_lr_init  = [3]
     position_lr_final = [0.01]
-    # 3000
-    feature_dc_lr =     [3000]
-    feature_rest_lr =   [600]
-    rotation_lr =       [0.001]
-
+    feature_dc_lr =     [2000]
+    feature_rest_lr =   [700]
+    rotation_lr =       [2000]
+    scaling_lr =        [0.005]
     
-    # directory_path = '/data/guest_storage/zhanpengluo/Dataset/MipNerf'
     directory_path = '/data/guest_storage/zhanpengluo/Dataset/F2Nerf'
     file_paths = [os.path.join(directory_path, name) for name in os.listdir(directory_path) if os.path.isdir(os.path.join(directory_path, name))]
-    # file_paths= ['/data/guest_storage/zhanpengluo/Dataset/MipNerf/kitchen']
-    # file_paths = ['/data/guest_storage/zhanpengluo/Dataset/DL3DV-10K/1K/path1']
 
-        
     
-    param_grid = list(itertools.product(position_lr_init, 
-                                        position_lr_final,
-                                        feature_dc_lr,
-                                        feature_rest_lr,
-                                        rotation_lr,
-                                        file_paths ))
+    config = {
+        "xyz_init": tune.loguniform(6, 1),
+        "xyz_final": tune.loguniform(0.05,0.001),
+        "feat_dc" : tune.choice([2000]),
+        "feat_rest": tune.choice([700]),
+        "rotate": tune.choice([2000]),
+        # "model": model_arg,
+        # "opt": opt_arg,
+        # "pipe": pipe_arg,
+        # "args": args
+    }
     
-    for xyz_init,xyz_final,feat_dc,feat_rest,rotate,f_path in param_grid:   
-        opt_arg.position_lr_init = xyz_init
-        opt_arg.position_lr_final = xyz_final
-        # opt_arg.feature_dc_lr = feat_dc
-        # opt_arg.feature_rest_lr = feat_rest
-        # opt_arg.rotation_lr =rotate
-   
-        model_arg.source_path= f_path
-        model_arg.model_path = os.path.join("/data/guest_storage/zhanpengluo/3dgs/newcopy_gs/gaussian-splatting/output/SGD_Evaluation/F2Nerf",os.path.basename(f_path))
-        print(f"optimizing {os.path.basename(f_path)}")
-        # if(os.path.basename(f_path)=='bicycle' or os.path.basename(f_path)=='grass'):
-        #     # opt_arg.densify_until_iter = 10_000
-        #     opt_arg.densify_grad_threshold = 0.00015
-        
-        training(model_arg,
-             opt_arg,
-             pipe_arg,
-             args.test_iterations,
-             args.save_iterations,
-             args.checkpoint_iterations,
-             args.start_checkpoint,
-             args.debug_from)
-        
-    print("\nTraining complete.")
-    sys.exit(0)
+    scheduler = ASHAScheduler(metric="psnr", mode="max", max_t=20000, grace_period=1)
+    analysis = tune.run(
+        raytune_training,
+        config=config,
+        num_samples=10,
+        scheduler=scheduler,
+        fail_fast=True,
+        resources_per_trial={"cpu": 2, "gpu": 1},
+    )
 
+    best_config = analysis.best_config
+    print("Best config: ", best_config)
+        

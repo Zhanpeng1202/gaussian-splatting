@@ -906,7 +906,6 @@ def _single_tensor_sgd(params: List[Tensor],
                        has_sparse_grad: bool,
                        param_name:str):
     if param_name =="xyz":
-        # Only param would be xyz
         for i, param in enumerate(params):
 
             d_p = d_p_list[i]
@@ -931,29 +930,6 @@ def _single_tensor_sgd(params: List[Tensor],
             z_tensor = z.unsqueeze(1).repeat(1, 3).cuda()
             z_tensor.mul_(z_tensor)
             d_p.mul_(z_tensor)
-            param.add_(d_p, alpha=alpha)
-    elif param_name == "scaling":
-        for i, param in enumerate(params):
-
-            d_p = d_p_list[i]
-            if weight_decay != 0:
-                d_p = d_p.add(param, alpha=weight_decay)
-            if momentum != 0:
-                buf = momentum_buffer_list[i]
-
-                if buf is None:
-                    buf = torch.clone(d_p).detach()
-                    momentum_buffer_list[i] = buf
-                else:
-                    buf.mul_(momentum).add_(d_p, alpha=1 - dampening)
-
-                if nesterov:
-                    d_p = d_p.add(buf, alpha=momentum)
-                else:
-                    d_p = buf
-            alpha = lr if maximize else -lr
-            exp_p = torch.exp(params[0])
-            d_p.div_(exp_p)
             param.add_(d_p, alpha=alpha)
     else:
         for i, param in enumerate(params):

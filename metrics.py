@@ -101,7 +101,7 @@ if __name__ == "__main__":
     # parser.add_argument('--model_paths', '-m', required=True, nargs="+", type=str, default=[])
     args = parser.parse_args()
     
-    directory_path = '/data/guest_storage/zhanpengluo/copy_gs/gaussian-splatting/output/SGD_Evaluation/MipNerf'
+    directory_path = '/data/guest_storage/zhanpengluo/copy_gs/gaussian-splatting/output/SGD_Without_Compensation/MipNerf'
     file_paths = [os.path.join(directory_path, name) for name in os.listdir(directory_path) if os.path.isdir(os.path.join(directory_path, name))]
 
     # args.model_path = 'NOT EXIST'

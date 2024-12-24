@@ -47,7 +47,7 @@ class ModelParams(ParamGroup):
     def __init__(self, parser, sentinel=False,sp=None,mp=None):
         self.sh_degree = 3
             
-        self._source_path = "/data/guest_storage/zhanpengluo/Dataset/MipNerf/bonsai"
+        self._source_path = "/data/guest_storage/zhanpengluo/Dataset/MipNerf/bicycle"
         self._model_path = "/data/guest_storage/zhanpengluo/copy_gs/gaussian-splatting/output/bicycle_gs"
 
         self._images = "images"
@@ -104,7 +104,7 @@ class OptimizationParams(ParamGroup):
         self.feature_rest_lr = 700 
         self.opacity_lr = 0.05 
         self.scaling_lr = 0.005
-        self.rotation_lr = 2000
+        self.rotation_lr = 0.001
         self.percent_dense = 0.01
         self.lambda_dssim = 0.2
         self.densification_interval = 100
