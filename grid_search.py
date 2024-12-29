@@ -99,45 +99,14 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     ema_loss_for_log = 0.0
     # progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
     first_iter += 1
-    web_cam = copy.deepcopy(scene.getTrainCameras()[0])
-    x0,y0,z0 = web_cam.T
-    web_rotation = web_cam.R
-    
-    
-    theata = 0
-    phi = 0
-    psi = 0
+
+    network_gui_ws.init_camera(scene)
     
     
     for iteration in range(first_iter, opt.iterations + 1):        
 
-        if network_gui_ws.data_array == None:
-            # print("Refresh the webpage")
-            pass
-        else:
-            start_time = time.time()    
-            extrin = network_gui_ws.data_array
-            # print(extrin)
-            x,y,z = extrin[0],extrin[1],extrin[2]
-            theata,phi,psi = extrin[3],extrin[4],extrin[5]
-            scale = extrin[6]
-
-            web_rot = eulerRotation(theata,phi,psi)
-            web_cam.R = web_rot
-            
-            web_xyz = [x+x0,y+y0,z+z0]
-            web_cam.T = web_xyz
-            # web_cam.scale = scale
-            web_cam.updateRemote()
-            
-            net_image = render(web_cam, gaussians, pipe, background, scaling_modifier = scale)["render"]
-            network_gui_ws.latest_width = net_image.size(2)
-            network_gui_ws.latest_height = net_image.size(1)
-            network_gui_ws.latest_result = memoryview((torch.clamp(net_image, min=0, max=1.0) * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy())
-            end_time = time.time()
-            # print(f"Time for rendering image {end_time - start_time} seconds")
+        network_gui_ws.render_for_websocket(render, gaussians, pipe, background)
         
-        start_time = time.time()
         iter_start.record()
 
         gaussians.update_learning_rate(iteration)

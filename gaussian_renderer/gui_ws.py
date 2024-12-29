@@ -8,6 +8,7 @@ import websockets
 import threading
 import struct
 
+
 curr_id = -1
 data_array = None
 latest_width = 0

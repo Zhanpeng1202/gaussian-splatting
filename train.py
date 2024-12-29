@@ -14,34 +14,17 @@ from tqdm import tqdm
 from utils.image_utils import psnr
 from argparse import ArgumentParser, Namespace
 from arguments import ModelParams, PipelineParams, OptimizationParams
-from gaussian_renderer import network_gui_ws
+from gaussian_renderer import network_gui_ws, eulerRotation
 import time
 import numpy as np
-import copy
+
 try:
     from torch.utils.tensorboard import SummaryWriter
     TENSORBOARD_FOUND = True
 except ImportError:
     TENSORBOARD_FOUND = False
 
-def eulerRotation(theata,phi,psi):
-    yaw = np.array([
-        [math.cos(theata), 0 , math.sin(theata)],
-        [0,1,0],
-        [-math.sin(theata), 0 , math.cos(theata)],
-    ])
-    pitch = np.array([
-        [1,0,0],
-        [0,math.cos(phi),-math.sin(phi)],
-        [0,math.sin(phi),math.cos(phi)],
-    ])
-    roll = np.array([
-        [math.cos(psi),-math.sin(psi),0],
-        [math.sin(psi),math.cos(psi),0],
-        [0,0,1],
-    ])
-    
-    return yaw@pitch@roll.tolist()
+
     
 def visualize(optimizer,name, path):
     import matplotlib.pyplot as plt
