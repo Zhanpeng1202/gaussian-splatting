@@ -10,6 +10,8 @@ import math
 import numpy as np
 import torch
 import copy
+from PIL import Image
+import io
 from utils.graphics_utils import getWorld2View2, getProjectionMatrix
 
 curr_id = -1
@@ -127,6 +129,18 @@ def render_for_websocket(render, gaussians, pipe, background):
         global latest_height, latest_width, latest_result
         latest_width = net_image.size(2)
         latest_height = net_image.size(1)
-        latest_result = memoryview((torch.clamp(net_image, min=0, max=1.0) * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy())
+        tmp = (torch.clamp(net_image, min=0, max=1.0) * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy()
+        image = Image.fromarray(tmp)
+        jpeg_buffer = io.BytesIO()
+        image.save(jpeg_buffer, format="JPEG", quality=85)  # Quality ranges from 1 (worst) to 95 (best)
+        jpeg_buffer.close
+        latest_result = memoryview(jpeg_buffer.getvalue())
+
+        # latest_result = memoryview((torch.clamp(net_image, min=0, max=1.0) * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy())
+        print(latest_result.nbytes)
+        
+        
+
+
 
 
