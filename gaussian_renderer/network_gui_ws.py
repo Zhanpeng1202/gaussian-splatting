@@ -11,7 +11,7 @@ import numpy as np
 import torch
 import copy
 from PIL import Image
-import io
+import cv2
 from utils.graphics_utils import getWorld2View2, getProjectionMatrix
 
 curr_id = -1
@@ -107,12 +107,13 @@ def update_camera(web_cam):
 def render_for_websocket(render, gaussians, pipe, background):
     global data_array
     if data_array == None:
-        print("Refresh the webpage in the local computer")
+        # print("Refresh the webpage in the local computer")
         return
     else:
         global web_camera
         extrin = data_array
 
+        # print("rendering")
         x,y,z = extrin[0],extrin[1],extrin[2]
         theata,phi,psi = extrin[3],extrin[4],extrin[5]
         scale = extrin[6]
@@ -122,22 +123,33 @@ def render_for_websocket(render, gaussians, pipe, background):
         
         web_xyz = [x+x0,y+y0,z+z0]
         web_camera.T = web_xyz
-        
         update_camera(web_camera)
         
+        
+         
         net_image = render(web_camera, gaussians, pipe, background, scaling_modifier = scale)["render"]
+            
         global latest_height, latest_width, latest_result
         latest_width = net_image.size(2)
         latest_height = net_image.size(1)
-        tmp = (torch.clamp(net_image, min=0, max=1.0) * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy()
-        image = Image.fromarray(tmp)
-        jpeg_buffer = io.BytesIO()
-        image.save(jpeg_buffer, format="JPEG", quality=85)  # Quality ranges from 1 (worst) to 95 (best)
-        jpeg_buffer.close
-        latest_result = memoryview(jpeg_buffer.getvalue())
+        tmp = (torch.clamp(net_image, min=0, max=1.0) * 255).byte().permute(1, 2, 0).contiguous().detach().cpu().numpy()
+        
+        tmp = cv2.cvtColor(tmp, cv2.COLOR_RGB2BGR)
+        
+        # with io.BytesIO() as jpeg_buffer:
+        #     image.save(jpeg_buffer, format="JPEG", quality=85)  # Quality ranges from 1 (worst) to 95 (best)
+        #     jpg_data = jpeg_buffer.getvalue()
 
-        # latest_result = memoryview((torch.clamp(net_image, min=0, max=1.0) * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy())
-        print(latest_result.nbytes)
+        encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 85]  # set quality level
+        success, encoded_img = cv2.imencode(".jpg", tmp, encode_param)
+        if success:
+            jpg_data = encoded_img.tobytes()
+        else:
+            print("Failed to compress image to .jpg")
+        
+        latest_result = memoryview(jpg_data)
+
+
         
         
 

@@ -105,7 +105,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     
     for iteration in range(first_iter, opt.iterations + 1):        
 
-        network_gui_ws.render_for_websocket(render, gaussians, pipe, background)
+        # network_gui_ws.render_for_websocket(render, gaussians, pipe, background)
         
         iter_start.record()
 
@@ -294,7 +294,8 @@ if __name__ == "__main__":
     position_lr_init  = [3]
     position_lr_final = [0.01]
     # 3000
-    feature_dc_lr =     [3000]
+    # feature_dc_lr =     [0.005,0.01,0.05]
+    feature_dc_lr =     [0.005,0.005,0.005]    
     feature_rest_lr =   [600]
     rotation_lr =       [0.001]
 
@@ -302,7 +303,7 @@ if __name__ == "__main__":
     # directory_path = '/data/guest_storage/zhanpengluo/Dataset/MipNerf'
     directory_path = '/data/guest_storage/zhanpengluo/Dataset/F2Nerf'
     file_paths = [os.path.join(directory_path, name) for name in os.listdir(directory_path) if os.path.isdir(os.path.join(directory_path, name))]
-    # file_paths= ['/data/guest_storage/zhanpengluo/Dataset/MipNerf/kitchen']
+    file_paths= ['/data/guest_storage/zhanpengluo/Dataset/MipNerf/kitchen']
     # file_paths = ['/data/guest_storage/zhanpengluo/Dataset/DL3DV-10K/1K/path1']
 
         
@@ -317,6 +318,7 @@ if __name__ == "__main__":
     for xyz_init,xyz_final,feat_dc,feat_rest,rotate,f_path in param_grid:   
         opt_arg.position_lr_init = xyz_init
         opt_arg.position_lr_final = xyz_final
+        opt_arg.scaling_lr = feat_dc
         # opt_arg.feature_dc_lr = feat_dc
         # opt_arg.feature_rest_lr = feat_rest
         # opt_arg.rotation_lr =rotate
