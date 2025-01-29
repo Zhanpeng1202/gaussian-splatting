@@ -1,6 +1,7 @@
 import torch
 import math
 from diff_gaussian_rasterization import GaussianRasterizationSettings, GaussianRasterizer
+from diff_gaussian_rasterization import GaussianRasterizationSettings_selection, GaussianRasterizer_selection
 from scene.gaussian_model import GaussianModel
 from utils.sh_utils import eval_sh
 
@@ -107,7 +108,9 @@ def render_sigma_selection(viewpoint_camera, pc : GaussianModel, pipe, bg_color 
     tanfovx = math.tan(viewpoint_camera.FoVx * 0.5)
     tanfovy = math.tan(viewpoint_camera.FoVy * 0.5)
 
-    raster_settings = GaussianRasterizationSettings(
+    sigma_s, sigma_d = sigma_list
+    
+    raster_settings = GaussianRasterizationSettings_selection(
         image_height=int(viewpoint_camera.image_height),
         image_width=int(viewpoint_camera.image_width),
         tanfovx=tanfovx,
@@ -119,10 +122,12 @@ def render_sigma_selection(viewpoint_camera, pc : GaussianModel, pipe, bg_color 
         sh_degree=pc.active_sh_degree,
         campos=viewpoint_camera.camera_center,
         prefiltered=False,
-        debug=pipe.debug
+        debug=pipe.debug,
+        sigma_s=sigma_s,
+        sigma_d=sigma_d
     )
-
-    rasterizer = GaussianRasterizer(raster_settings=raster_settings)
+ 
+    rasterizer = GaussianRasterizer_selection(raster_settings=raster_settings)
 
     means3D = pc.get_xyz
     means2D = screenspace_points

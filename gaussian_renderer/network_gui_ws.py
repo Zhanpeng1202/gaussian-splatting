@@ -10,9 +10,9 @@ import math
 import numpy as np
 import torch
 import copy
-from PIL import Image
 import cv2
 from utils.graphics_utils import getWorld2View2, getProjectionMatrix
+from gaussian_renderer import render
 
 curr_id = -1
 data_array = None
@@ -104,7 +104,7 @@ def update_camera(web_cam):
     web_cam.full_proj_transform = (web_cam.world_view_transform.unsqueeze(0).bmm(web_cam.projection_matrix.unsqueeze(0))).squeeze(0)
     web_cam.camera_center = web_cam.world_view_transform.inverse()[3, :3]
 
-def render_for_websocket(render, gaussians, pipe, background):
+def render_for_websocket(gaussians, pipe, background):
     global data_array
     if data_array == None:
         # print("Refresh the webpage in the local computer")

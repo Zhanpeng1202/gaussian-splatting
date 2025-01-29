@@ -5,7 +5,7 @@ import torch
 import math
 from random import randint
 from utils.loss_utils import l1_loss, ssim
-from gaussian_renderer import render
+from gaussian_renderer import render, render_sigma_selection
 import sys
 from scene import Scene, GaussianModel
 from utils.general_utils import safe_state
@@ -105,7 +105,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     
     for iteration in range(first_iter, opt.iterations + 1):        
 
-        # network_gui_ws.render_for_websocket(render, gaussians, pipe, background)
+        network_gui_ws.render_for_websocket(gaussians, pipe, background)
         
         iter_start.record()
 
@@ -126,7 +126,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         bg = torch.rand((3), device="cuda") if opt.random_background else background
 
-        render_pkg = render(viewpoint_cam, gaussians, pipe, bg)
+        # render_pkg = render(viewpoint_cam, gaussians, pipe, bg)
+        sigma_list = [5e-1, 2e-3]
+        render_pkg = render_sigma_selection(viewpoint_cam, gaussians, pipe, bg, sigma_list=sigma_list)
         image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
 
         # Loss
