@@ -1,5 +1,5 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "7"
+os.environ["CUDA_VISIBLE_DEVICES"] = "6"
 from PIL import Image
 import torch
 import math
@@ -79,7 +79,7 @@ def visualize(optimizer,name, path):
     plt.savefig(f"{path}/{name}/step_size.png")
 
 
-def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from):
+def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from,sigma_list):
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
@@ -105,7 +105,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     
     for iteration in range(first_iter, opt.iterations + 1):        
 
-        network_gui_ws.render_for_websocket(gaussians, pipe, background)
+        # network_gui_ws.render_for_websocket(gaussians, pipe, background)
         
         iter_start.record()
 
@@ -127,7 +127,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         bg = torch.rand((3), device="cuda") if opt.random_background else background
 
         # render_pkg = render(viewpoint_cam, gaussians, pipe, bg)
-        sigma_list = [5e-1, 2e-3]
+        # sigma_list = [5e-1, 2e-3]
         render_pkg = render_sigma_selection(viewpoint_cam, gaussians, pipe, bg, sigma_list=sigma_list)
         image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
 
@@ -177,8 +177,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
             # Optimizer step
             if iteration < opt.iterations:
-                gaussians.optimizer.step(viewpoint_cam.getViewMatrix())
-                # gaussians.optimizer.step()
+                # gaussians.optimizer.step(viewpoint_cam.getViewMatrix())
+                gaussians.optimizer.step()
                 gaussians.optimizer.zero_grad(set_to_none = True)
                 
                 gaussians.optimizer_opacity.step()
@@ -262,7 +262,7 @@ if __name__ == "__main__":
     
 
     parser.add_argument('--ip', type=str, default="127.0.0.1")
-    parser.add_argument('--port', type=int, default=6119)
+    parser.add_argument('--port', type=int, default=6129)
     parser.add_argument('--debug_from', type=int, default=-1)
     parser.add_argument('--detect_anomaly', action='store_true', default=False)
     parser.add_argument("--test_iterations", nargs="+", type=int, default=[5_000, 10_000, 20_000, 30_000])
@@ -297,7 +297,9 @@ if __name__ == "__main__":
     position_lr_final = [0.01]
     # 3000
     # feature_dc_lr =     [0.005,0.01,0.05]
-    feature_dc_lr =     [0.005,0.005,0.005]    
+    feature_dc_lr =     [0.005]
+    sigma_s_list =      [1e-1 ,5e-2,5e-1]
+    sigma_d_list =      [2e-4, 1e-4,5e-5]
     feature_rest_lr =   [600]
     rotation_lr =       [0.001]
 
@@ -305,29 +307,25 @@ if __name__ == "__main__":
     # directory_path = '/data/guest_storage/zhanpengluo/Dataset/MipNerf'
     directory_path = '/data/guest_storage/zhanpengluo/Dataset/F2Nerf'
     file_paths = [os.path.join(directory_path, name) for name in os.listdir(directory_path) if os.path.isdir(os.path.join(directory_path, name))]
-    file_paths= ['/data/guest_storage/zhanpengluo/Dataset/MipNerf/kitchen']
+    file_paths= ['/data/guest_storage/zhanpengluo/Dataset/MipNerf/bicycle']
     # file_paths = ['/data/guest_storage/zhanpengluo/Dataset/DL3DV-10K/1K/path1']
 
         
     
-    param_grid = list(itertools.product(position_lr_init, 
-                                        position_lr_final,
-                                        feature_dc_lr,
-                                        feature_rest_lr,
-                                        rotation_lr,
-                                        file_paths ))
+    param_grid = list(itertools.product(position_lr_init,position_lr_final, sigma_s_list,sigma_d_list,file_paths ))
     
-    for xyz_init,xyz_final,feat_dc,feat_rest,rotate,f_path in param_grid:   
+    for xyz_init, xyz_final, simga_s, sigma_d,f_path in param_grid:   
         opt_arg.position_lr_init = xyz_init
         opt_arg.position_lr_final = xyz_final
-        opt_arg.scaling_lr = feat_dc
+        # opt_arg.scaling_lr = feat_dc
         # opt_arg.feature_dc_lr = feat_dc
         # opt_arg.feature_rest_lr = feat_rest
         # opt_arg.rotation_lr =rotate
-   
+        sigma_list = [simga_s, sigma_d]
         model_arg.source_path= f_path
         model_arg.model_path = os.path.join("/data/guest_storage/zhanpengluo/3dgs/newcopy_gs/gaussian-splatting/output/SGD_Evaluation/F2Nerf",os.path.basename(f_path))
         print(f"optimizing {os.path.basename(f_path)}")
+        print(f"--------------  sigma_s and sigma_d: {sigma_list}")
         # if(os.path.basename(f_path)=='bicycle' or os.path.basename(f_path)=='grass'):
         #     # opt_arg.densify_until_iter = 10_000
         #     opt_arg.densify_grad_threshold = 0.00015
@@ -339,7 +337,7 @@ if __name__ == "__main__":
              args.save_iterations,
              args.checkpoint_iterations,
              args.start_checkpoint,
-             args.debug_from)
+             args.debug_from,sigma_list)
         
     print("\nTraining complete.")
     sys.exit(0)

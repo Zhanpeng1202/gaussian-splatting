@@ -20,7 +20,7 @@ from utils.sh_utils import RGB2SH
 from simple_knn._C import distCUDA2
 from utils.graphics_utils import BasicPointCloud
 from utils.general_utils import strip_symmetric, build_scaling_rotation
-from .adapt_3dgs_opt import GS_SGD,OG_SGD
+# from .adapt_3dgs_opt import GS_SGD,OG_SGD
 import math
 # from .visualize_optimization import GS_Adam, GS_SGD
 
@@ -293,8 +293,7 @@ class GaussianModel:
         ]
 
         self.optimizer_opacity = torch.optim.Adam(l_adam,lr=0.0)
-        # self.optimizer= OG_SGD(l,lr=0.0)
-        self.optimizer = GS_SGD(l,lr=0.0)
+        self.optimizer = torch.optim.SGD(l,lr=0.0)
         
         self.xyz_scheduler_args = get_expon_lr_func(lr_init=training_args.position_lr_init,
                                             lr_final=training_args.position_lr_final,
